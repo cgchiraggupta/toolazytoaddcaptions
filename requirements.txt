@@ -1,6 +1,8 @@
 # Core ML
-openai-whisper>=20231117
+# openai-whisper>=20231117  # ← OLD: commented out, replaced by HuggingFace Apex model
 torch>=2.0.0
+transformers>=4.35.0
+accelerate>=0.24.0
 
 # Audio/Video processing
 ffmpeg-python>=0.2.0

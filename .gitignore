@@ -1,0 +1,45 @@
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Logs and temp output
+app.log
+nohup.out
+*.srt
+
+# Screenshots and debug files
+screenshot_error.png
+
+# Editor and agent directories
+.agent/
+.agents/
+.claude/
+.windsurf/
+.vscode/
+.idea/
+
+# Misc project files
+skills-lock.json
+
+# Malformed pip install artifacts (e.g. pip install >=x.x.x without quotes)
+=*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# HuggingFace model cache (large, auto-downloaded on first run)
+.cache/
+
+# Environment variables
+.env
+.env.local

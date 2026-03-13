@@ -1,106 +1,179 @@
-# HinglishCaps ✦
-Auto-generate subtitles for Hindi · English · Hinglish videos using OpenAI Whisper.
-Outputs a standard `.SRT` file you can import into any video editor.
+# HinglishCaps
+
+Auto-generate subtitles for Hindi, English, and Hinglish videos.
+Outputs a standard `.srt` file you can import into any video editor.
+
+Powered by [Oriserve/Whisper-Hindi2Hinglish-Apex](https://huggingface.co/Oriserve/Whisper-Hindi2Hinglish-Apex) — a Whisper checkpoint fine-tuned specifically for Hinglish (Hindi-English code-switching).
 
 ---
 
-## Setup (one-time)
+## What it does
 
-### Prerequisites
-- Python 3.9+
-- **FFmpeg** installed on your system (required for audio extraction)
+Upload a video, click a button, get an `.srt` caption file back.
+
+Under the hood it strips the audio with FFmpeg, runs it through the Apex model, converts the timestamped output to SRT format, and hands you the file. Works well with content that switches between Hindi and English — reels, vlogs, interviews, podcasts.
+
+---
+
+## Requirements
+
+**System dependencies**
+
+- Python 3.9 or higher
+- FFmpeg installed and available in your PATH
 
 Install FFmpeg:
+
 ```bash
 # macOS
 brew install ffmpeg
 
-# Ubuntu/Debian
+# Ubuntu / Debian
 sudo apt install ffmpeg
 
-# Windows — download from https://ffmpeg.org/download.html and add to PATH
+# Windows
+# Download from https://ffmpeg.org/download.html and add the bin folder to PATH
 ```
 
-### Install Python dependencies
-```bash
-cd hinglish-captions
-pip install -r requirements.txt
-```
+**Hardware**
 
-> **Apple Silicon (M1/M2/M3)?** PyTorch works natively. No extra steps needed.
-> **NVIDIA GPU?** Replace `torch` in requirements.txt with the CUDA build from https://pytorch.org/get-started/locally/ for 5-10× faster transcription.
+- 4 GB RAM minimum (model loads to ~3 GB)
+- No GPU required — runs entirely on CPU
+- Apple Silicon (M1 / M2 / M3) works natively with no extra steps
 
 ---
 
-## Run
+## Installation
+
+Clone the repository and set up a virtual environment:
+
 ```bash
+git clone https://github.com/cgchiraggupta/toolazytoaddcaptions.git
+cd toolazytoaddcaptions
+
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+
+pip install -r requirements.txt
+```
+
+---
+
+## Running the app
+
+```bash
+source venv/bin/activate        # Windows: venv\Scripts\activate
 python app.py
 ```
-Open your browser at **http://localhost:7860**
+
+Then open your browser at `http://localhost:7860`
+
+---
+
+## Usage
+
+1. Open the app in your browser
+2. Upload a video file using the upload area
+3. Click **Generate Captions**
+4. The progress bar will appear — wait for it to complete
+5. Download the `.srt` file once it shows up
+
+**Importing the SRT into your editor**
+
+| Editor | How to import |
+|---|---|
+| CapCut | Text > Auto Captions > Import |
+| DaVinci Resolve | Timeline > Import Subtitle |
+| Premiere Pro | File > Import |
+| Final Cut Pro | File > Import > Captions |
+| iMovie | Not supported — use CapCut instead |
+
+---
+
+## First run
+
+The first time you click Generate Captions, the model (~1.5 GB) downloads automatically from HuggingFace. This happens once. After that it is cached permanently at `~/.cache/huggingface/` and is never downloaded again.
+
+During the download the progress bar will sit at 30% and the status will read "Transcribing". That is normal — the download and transcription both happen inside the same blocking call with no intermediate progress updates. Do not close the tab or kill the process.
+
+On a decent connection the download takes 3 to 8 minutes. Transcription starts immediately after.
+
+---
+
+## Project structure
+
+```
+toolazytoaddcaptions/
+├── app.py              # everything — audio extraction, transcription, SRT generation, Gradio UI
+├── requirements.txt    # Python dependencies
+└── README.md
+```
+
+The old openai-whisper based implementation is preserved inside `app.py` as commented-out code. Each replaced section is clearly marked with `── OLD` and `── END OLD` so you can find and restore it if needed.
 
 ---
 
 ## How it works
 
 ```
-Video File
-    │
-    ▼
-[FFmpeg] ──► Extracts mono 16kHz WAV audio
-    │
-    ▼
-[Whisper] ──► AI transcription with timestamps
-    │           (set language hint to "hi" for Hinglish)
-    ▼
-[Python] ──► Converts segments → SRT format
-    │
-    ▼
-  captions.srt  ──► Import into your video editor ✓
+Video file
+    |
+    v
+FFmpeg  -->  extracts mono 16 kHz WAV audio
+    |
+    v
+Apex model  -->  transcribes audio with word-level timestamps
+    |
+    v
+Python  -->  converts segments to SRT format
+    |
+    v
+captions.srt  -->  ready to import into your editor
 ```
 
-## Model Size Guide
+---
 
-| Model  | Size   | Speed  | Accuracy | Best for                         |
-|--------|--------|--------|----------|----------------------------------|
-| tiny   | 39MB   | ⚡⚡⚡⚡ | ★★☆☆☆    | Quick tests                      |
-| base   | 74MB   | ⚡⚡⚡   | ★★★☆☆    | Short clips, good starting point |
-| small  | 244MB  | ⚡⚡     | ★★★★☆    | Most Hinglish content ← sweet spot |
-| medium | 769MB  | ⚡       | ★★★★★    | Long videos, heavy code-switching |
-| large  | 1.5GB  | 🐢      | ★★★★★+   | Maximum accuracy                 |
+## Model
 
-**Recommendation:** Start with `small` for Hinglish. It handles code-switching very well.
+**Oriserve/Whisper-Hindi2Hinglish-Apex**
+HuggingFace: https://huggingface.co/Oriserve/Whisper-Hindi2Hinglish-Apex
 
-## Language Hint
+A Whisper medium checkpoint fine-tuned on Hinglish speech data. The base Whisper model can get confused by code-switching — it may randomly switch between Hindi script and English script mid-sentence, or transliterate instead of transcribe. Apex is trained to handle this natively and keeps output consistent.
 
-- `auto` — Whisper detects language automatically. Can get confused with Hinglish.
-- `hi` — Forces Hindi mode. Whisper will preserve Hindi script AND keep English words
-  in English script. **Best for Hinglish** reels/videos.
-- `en` — Forces English mode. English only.
+- File size: ~1.5 GB
+- Downloaded automatically on first run
+- Cached at `~/.cache/huggingface/hub/`
 
-## Importing SRT into Video Editors
+---
 
-- **CapCut** → Text → Auto Captions → Import → choose `.srt`
-- **DaVinci Resolve** → Timeline → Import Subtitle
-- **Premiere Pro** → File → Import → select `.srt`
-- **Final Cut Pro** → File → Import → Captions
-- **iMovie** → Doesn't support SRT natively (use CapCut instead)
+## Performance
 
-## Want even better Hinglish accuracy?
+All numbers are approximate and depend on video length and background load.
 
-Swap the Whisper model for a fine-tuned Hindi version from Hugging Face.
-Search for: `whisper-hindi` or `vasista22/whisper-hindi-large-v2`
+| Machine | Time per minute of video |
+|---|---|
+| Apple M1 8 GB (CPU) | 1 to 2 minutes |
+| Apple M2 / M3 (CPU) | 45 to 90 seconds |
+| Modern Intel / AMD (CPU) | 2 to 4 minutes |
 
-Replace the `transcribe()` function in `app.py` with the 🤗 `transformers` pipeline:
+There is no GPU acceleration in the current setup. If you have an NVIDIA GPU, change `device = "cpu"` to `device = "cuda"` in `load_model()` inside `app.py` and transcription will be significantly faster.
 
-```python
-from transformers import pipeline
+---
 
-pipe = pipeline(
-    "automatic-speech-recognition",
-    model="vasista22/whisper-hindi-large-v2",
-    chunk_length_s=30,
-    device="cpu",  # or "cuda" for GPU
-)
-result = pipe(audio_path, return_timestamps=True)
-```
-# toolazytoaddcaptions
+## Dependencies
+
+| Package | Purpose |
+|---|---|
+| `gradio` | Web UI |
+| `torch` | Model runtime |
+| `transformers` | HuggingFace model loading and pipeline |
+| `accelerate` | Optimized model loading |
+| `ffmpeg-python` | Audio extraction from video |
+
+---
+
+## Notes
+
+- The app auto-selects a free port starting from 7860. If 7860 is occupied it moves to 7861, and so on.
+- Output `.srt` files are written to your system's temp directory and served through Gradio's file cache.
+- Tested on macOS with Python 3.14 and Gradio 6.
