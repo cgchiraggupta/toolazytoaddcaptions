@@ -94,16 +94,29 @@ def load_model():
 
         processor = AutoProcessor.from_pretrained(model_id)
 
+        # FIX: set generation params directly on generation_config
+        # Passing them via generate_kwargs is deprecated in transformers ≥5.x
+        # no_repeat_ngram_size=5 — kills hallucination loops ("chup chup chup..." etc.)
+        # condition_on_prev_tokens=False — stops hallucinations spreading chunk to chunk
+        model.generation_config.task = "transcribe"
+        model.generation_config.language = "en"
+        model.generation_config.no_repeat_ngram_size = 5
+        model.generation_config.condition_on_prev_tokens = False
+
         _model_cache["apex"] = hf_pipeline(
             "automatic-speech-recognition",
             model=model,
             tokenizer=processor.tokenizer,
             feature_extractor=processor.feature_extractor,
-            dtype=torch_dtype,  # FIX: torch_dtype= deprecated in transformers ≥4.45, use dtype=
             device=device,
-            generate_kwargs={"task": "transcribe", "language": "en"},
-            chunk_length_s=30,  # handles long videos by splitting into chunks
+            chunk_length_s=30,
+            stride_length_s=5,
+            # FIX: return_timestamps=True (boolean), NOT "word"
+            # "word" requires alignment_heads on the model — fine-tuned checkpoints
+            # almost never have these, causing: TypeError: 'NoneType' is not iterable
+            # boolean True uses the model's own <|timestamp|> tokens instead
             return_timestamps=True,
+            ignore_warning=True,
         )
         print("Model loaded successfully!")
     return _model_cache["apex"]
@@ -111,20 +124,51 @@ def load_model():
 
 def transcribe(audio_path: str) -> list[dict]:
     """Transcribe audio and return list of segments with timestamps."""
+    import wave
+
     pipe = load_model()
     result = pipe(audio_path)
 
-    # Convert HuggingFace output → segment format expected by SRT generator
+    raw_chunks = result.get("chunks", [])
+
+    # Get audio duration so we can estimate timestamps when the model returns None
+    with wave.open(audio_path, "rb") as wf:
+        audio_duration = wf.getnframes() / wf.getframerate()
+
+    n = len(raw_chunks)
     segments = []
-    for i, chunk in enumerate(result["chunks"]):
+
+    for i, chunk in enumerate(raw_chunks):
+        ts = chunk.get("timestamp", (None, None))
+        text = chunk.get("text", "").strip()
+
+        if not text:
+            continue
+
+        # Estimate start if missing — divide audio evenly across chunks
+        if ts[0] is not None:
+            start = ts[0]
+        else:
+            start = (i / n) * audio_duration if n > 0 else 0.0
+
+        # Estimate end if missing — use next chunk's start or end of audio
+        if ts[1] is not None:
+            end = ts[1]
+        elif i + 1 < n:
+            next_ts = raw_chunks[i + 1].get("timestamp", (None, None))
+            end = next_ts[0] if next_ts[0] is not None else start + (audio_duration / n)
+        else:
+            end = audio_duration
+
         segments.append(
             {
-                "id": i,
-                "start": chunk["timestamp"][0] or 0.0,
-                "end": chunk["timestamp"][1] or 0.0,
-                "text": chunk["text"],
+                "id": len(segments),
+                "start": start,
+                "end": end,
+                "text": text,
             }
         )
+
     return segments
 
 
