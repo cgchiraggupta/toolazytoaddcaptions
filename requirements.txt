@@ -1,0 +1,9 @@
+# Core ML
+openai-whisper>=20231117
+torch>=2.0.0
+
+# Audio/Video processing
+ffmpeg-python>=0.2.0
+
+# UI
+gradio>=4.0.0
