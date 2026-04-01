@@ -11,6 +11,8 @@ import gradio as gr
 # import whisper  # ← OLD: openai-whisper based transcription
 #                 #   commented out — replaced by HuggingFace Apex model below
 import torch
+import whisper  # For word-level timestamps
+import whisper_timestamped  # Word-level timestamp support
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 from transformers import pipeline as hf_pipeline
 
@@ -176,6 +178,91 @@ def transcribe(audio_path: str) -> list[dict]:
 
 
 # ─────────────────────────────────────────────
+# 2b. WORD-LEVEL TRANSCRIPTION (whisper-timestamped)
+# ─────────────────────────────────────────────
+
+_whisper_model_cache = {}
+
+
+def load_whisper_model(model_size: str = "base"):
+    """Load and cache OpenAI Whisper model for word-level timestamps."""
+    if model_size not in _whisper_model_cache:
+        print(f"Loading Whisper model for word-level timestamps: {model_size} ...")
+        _whisper_model_cache[model_size] = whisper.load_model(model_size)
+    return _whisper_model_cache[model_size]
+
+
+def transcribe_word_level(
+    audio_path: str, model_size: str = "base", words_per_line: int = 2
+) -> list[dict]:
+    """
+    Transcribe audio with word-level timestamps using whisper-timestamped.
+    Groups words into lines with specified words_per_line.
+    """
+    model = load_whisper_model(model_size)
+
+    # Get word-level timestamps
+    result = whisper_timestamped.transcribe_timestamped(
+        model, audio_path, language="en", task="transcribe", verbose=False
+    )
+
+    # Extract all words with timestamps
+    words = []
+    for segment in result.get("segments", []):
+        for word_info in segment.get("words", []):
+            word_text = word_info.get("text", "").strip()
+            if word_text:
+                words.append(
+                    {
+                        "text": word_text,
+                        "start": word_info.get("start", 0),
+                        "end": word_info.get("end", 0),
+                    }
+                )
+
+    if not words:
+        return []
+
+    # Group words into lines (words_per_line words per caption)
+    segments = []
+    current_line_words = []
+    line_start = words[0]["start"]
+    line_end = words[0]["end"]
+
+    for i, word in enumerate(words):
+        current_line_words.append(word["text"])
+        line_end = word["end"]
+
+        # Create a new segment when we hit words_per_line
+        if len(current_line_words) >= words_per_line:
+            segments.append(
+                {
+                    "id": len(segments),
+                    "start": line_start,
+                    "end": line_end,
+                    "text": " ".join(current_line_words),
+                }
+            )
+            current_line_words = []
+            # Start next line from next word's start time
+            if i + 1 < len(words):
+                line_start = words[i + 1]["start"]
+
+    # Add remaining words as final segment
+    if current_line_words:
+        segments.append(
+            {
+                "id": len(segments),
+                "start": line_start,
+                "end": line_end,
+                "text": " ".join(current_line_words),
+            }
+        )
+
+    return segments
+
+
+# ─────────────────────────────────────────────
 # 3. SRT GENERATION  (unchanged)
 # ─────────────────────────────────────────────
 
@@ -199,6 +286,72 @@ def segments_to_srt(segments: list[dict]) -> str:
         end = seconds_to_srt_time(seg["end"])
         text = seg["text"].strip()
         lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────
+# PREMIERE PRO FORMAT SUPPORT
+# ─────────────────────────────────────────────
+
+
+def get_video_fps(video_path: str) -> float:
+    """Extract FPS from video file using ffprobe."""
+    try:
+        probe = ffmpeg.probe(video_path)
+        video_stream = next(
+            (stream for stream in probe["streams"] if stream["codec_type"] == "video"),
+            None,
+        )
+        if video_stream:
+            fps_str = video_stream.get("r_frame_rate", "25/1")
+            # Parse fraction like "30/1" or "25/1"
+            if "/" in fps_str:
+                num, den = fps_str.split("/")
+                return float(num) / float(den)
+            return float(fps_str)
+    except Exception:
+        pass
+    return 25.0  # Default to 25 FPS if detection fails
+
+
+def seconds_to_timecode(seconds: float, fps: float = 25.0) -> str:
+    """Convert seconds to HH:MM:SS:FF format (Premiere Pro timecode)."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    frames = int((seconds - int(seconds)) * fps)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}:{frames:02d}"
+
+
+def segments_to_pr_text(segments: list[dict], fps: float = 25.0) -> str:
+    """
+    Convert segments to Premiere Pro Text format (.txt).
+    Format: HH:MM:SS:FF - HH:MM:SS:FF\\nText\\n\\n
+    """
+    lines = []
+    for seg in segments:
+        start_tc = seconds_to_timecode(seg["start"], fps)
+        end_tc = seconds_to_timecode(seg["end"], fps)
+        lines.append(f"{start_tc} - {end_tc}")
+        lines.append(seg["text"].strip())
+        lines.append("")  # Blank line between entries
+    return "\n".join(lines)
+
+
+def segments_to_pr_srt(segments: list[dict]) -> str:
+    """
+    Convert segments to frame-accurate SRT for Premiere Pro.
+    Uses standard SRT format with precise millisecond timestamps.
+    """
+    lines = []
+    for i, seg in enumerate(segments, start=1):
+        start = seconds_to_srt_time(seg["start"])
+        end = seconds_to_srt_time(seg["end"])
+        text = seg["text"].strip()
+        lines.append(f"{i}")
+        lines.append(f"{start} --> {end}")
+        lines.append(text)
+        lines.append("")  # Blank line
     return "\n".join(lines)
 
 
@@ -249,8 +402,14 @@ def segments_to_srt(segments: list[dict]) -> str:
 # ── NEW: gr.Progress() based pipeline  (Apex model, no dropdowns) ────────────
 
 
-def generate_captions(video_file, progress=gr.Progress()):
-    """Full pipeline: video → SRT file."""
+def generate_captions(
+    video_file,
+    word_level: bool = False,
+    words_per_line: int = 2,
+    output_format: str = "srt",
+    progress=gr.Progress(),
+):
+    """Full pipeline: video → caption file."""
     if video_file is None:
         return None, "⚠️ Please upload a video file first."
 
@@ -260,29 +419,61 @@ def generate_captions(video_file, progress=gr.Progress()):
         audio_path = extract_audio(video_file, tmp)
 
         # Step 2 — transcribe
-        # NOTE: bar will sit at 30% the entire time — this is normal.
-        # On first run the ~1.5 GB model downloads here, then transcription runs on CPU.
-        # Both are one blocking call with no internal progress hooks.
-        progress(
-            0.3,
-            desc="🤖 Transcribing... (bar stays at 30% — normal. First run downloads ~1.5 GB model)",
-        )
-        segments = transcribe(audio_path)
+        if word_level:
+            progress(
+                0.3,
+                desc="🤖 Transcribing with word-level timestamps... (downloading Whisper model if needed)",
+            )
+            segments = transcribe_word_level(audio_path, words_per_line=words_per_line)
+        else:
+            # NOTE: bar will sit at 30% the entire time — this is normal.
+            # On first run the ~1.5 GB model downloads here, then transcription runs on CPU.
+            progress(
+                0.3,
+                desc="🤖 Transcribing... (bar stays at 30% — normal. First run downloads ~1.5 GB model)",
+            )
+            segments = transcribe(audio_path)
 
-        # Step 3 — build SRT
-        progress(0.9, desc="📝 Generating SRT file...")
-        srt_content = segments_to_srt(segments)
+        # Step 3 — detect FPS for Premiere Pro formats
+        fps = 25.0
+        if output_format in ["pr-text", "pr-srt"]:
+            progress(0.85, desc="🎬 Detecting video FPS...")
+            fps = get_video_fps(video_file)
 
-        # Step 4 — write SRT to a path Gradio 6 trusts
-        # NOTE: /tmp is a symlink on macOS → Gradio 6 rejects it with InvalidPathError
-        #       tempfile.gettempdir() returns the real system temp dir (/var/folders/…)
-        output_path = os.path.join(tempfile.gettempdir(), "captions.srt")
+        # Step 4 — generate output based on format
+        progress(0.9, desc="📝 Generating caption file...")
+
+        if output_format == "pr-text":
+            # Premiere Pro Text format (.txt)
+            content = segments_to_pr_text(segments, fps)
+            output_filename = "captions.txt"
+        elif output_format == "pr-srt":
+            # Premiere Pro optimized SRT (frame-accurate)
+            content = segments_to_pr_srt(segments)
+            output_filename = "captions.srt"
+        else:
+            # Standard SRT
+            content = segments_to_srt(segments)
+            output_filename = "captions.srt"
+
+        # Step 5 — write to output path
+        output_path = os.path.join(tempfile.gettempdir(), output_filename)
         with open(output_path, "w", encoding="utf-8") as f:
-            f.write(srt_content)
+            f.write(content)
 
         progress(1.0, desc="✅ Done!")
         num_segments = len(segments)
-        return output_path, f"✅ Done! Generated {num_segments} caption segments."
+
+        format_name = {
+            "srt": "Standard SRT",
+            "pr-srt": "Premiere Pro SRT",
+            "pr-text": "Premiere Pro Text",
+        }.get(output_format, "SRT")
+
+        return (
+            output_path,
+            f"✅ Done! Generated {num_segments} caption segments ({format_name}).",
+        )
 
 
 # ── END NEW ──────────────────────────────────────────────────────────────────
@@ -395,6 +586,35 @@ def build_ui():
         with gr.Row():
             video_input = gr.Video(label="Upload Video", sources=["upload"])
 
+        with gr.Row():
+            with gr.Column():
+                word_level_check = gr.Checkbox(
+                    label="Word-level timestamps",
+                    value=False,
+                    info="Split captions into 2-3 words per line (karaoke style)",
+                )
+                words_per_line_slider = gr.Slider(
+                    minimum=1,
+                    maximum=5,
+                    value=2,
+                    step=1,
+                    label="Words per caption line",
+                    visible=False,  # Hidden by default, shown when word-level is enabled
+                )
+
+        with gr.Row():
+            with gr.Column():
+                output_format_dropdown = gr.Dropdown(
+                    choices=[
+                        ("Standard SRT", "srt"),
+                        ("Premiere Pro SRT", "pr-srt"),
+                        ("Premiere Pro Text (.txt)", "pr-text"),
+                    ],
+                    value="srt",
+                    label="Output Format",
+                    info="Choose format for your video editor",
+                )
+
         run_btn = gr.Button("Generate Captions ✦", variant="primary", size="lg")
         status_box = gr.Textbox(
             label="Status", interactive=False, lines=1, value="Waiting for upload..."
@@ -410,9 +630,21 @@ def build_ui():
             </div>
         """)
 
+        # Show/hide words_per_line slider based on word_level checkbox
+        word_level_check.change(
+            fn=lambda x: gr.update(visible=x),
+            inputs=[word_level_check],
+            outputs=[words_per_line_slider],
+        )
+
         run_btn.click(
             fn=generate_captions,
-            inputs=[video_input],
+            inputs=[
+                video_input,
+                word_level_check,
+                words_per_line_slider,
+                output_format_dropdown,
+            ],
             outputs=[srt_output, status_box],
         )
 

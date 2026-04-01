@@ -1,11 +1,14 @@
 # Core ML
-# openai-whisper>=20231117  # ← OLD: commented out, replaced by HuggingFace Apex model
+openai-whisper>=20231117  # Required for whisper-timestamped
 torch>=2.0.0
 transformers>=4.35.0
 accelerate>=0.24.0
 
 # Audio/Video processing
 ffmpeg-python>=0.2.0
+
+# Word-level timestamp processing
+whisper-timestamped>=1.14.0
 
 # UI
 gradio>=4.0.0

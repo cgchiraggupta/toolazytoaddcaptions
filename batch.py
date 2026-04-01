@@ -8,9 +8,10 @@ import wave
 
 import ffmpeg
 import torch
+import whisper
+import whisper_timestamped
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 from transformers import pipeline as hf_pipeline
-
 
 # ─────────────────────────────────────────────
 # MODEL  (shared cache — loaded once for entire batch)
@@ -23,7 +24,9 @@ def load_model():
     """Load and cache the Apex model. Downloads automatically on first run (~1.5 GB)."""
     if "apex" not in _model_cache:
         print("Loading Whisper-Hindi2Hinglish-Apex...")
-        print("(First run will download ~1.5 GB — this happens once, then it's cached forever)\n")
+        print(
+            "(First run will download ~1.5 GB — this happens once, then it's cached forever)\n"
+        )
 
         model_id = "Oriserve/Whisper-Hindi2Hinglish-Apex"
         device = "cpu"
@@ -63,6 +66,7 @@ def load_model():
 # AUDIO EXTRACTION
 # ─────────────────────────────────────────────
 
+
 def extract_audio(video_path: str, output_dir: str) -> str:
     """Extract mono 16kHz WAV audio from a video file using FFmpeg."""
     audio_path = os.path.join(output_dir, "audio.wav")
@@ -78,6 +82,7 @@ def extract_audio(video_path: str, output_dir: str) -> str:
 # ─────────────────────────────────────────────
 # TRANSCRIPTION
 # ─────────────────────────────────────────────
+
 
 def transcribe(audio_path: str) -> list[dict]:
     """Transcribe audio and return list of segments with timestamps."""
@@ -128,8 +133,94 @@ def transcribe(audio_path: str) -> list[dict]:
 
 
 # ─────────────────────────────────────────────
+# WORD-LEVEL TIMESTAMPS (whisper-timestamped)
+# ─────────────────────────────────────────────
+
+_whisper_model_cache = {}
+
+
+def load_whisper_model(model_size: str = "base"):
+    """Load and cache OpenAI Whisper model for word-level timestamps."""
+    if model_size not in _whisper_model_cache:
+        print(f"Loading Whisper model for word-level timestamps: {model_size} ...")
+        _whisper_model_cache[model_size] = whisper.load_model(model_size)
+    return _whisper_model_cache[model_size]
+
+
+def transcribe_word_level(
+    audio_path: str, model_size: str = "base", words_per_line: int = 2
+) -> list[dict]:
+    """
+    Transcribe audio with word-level timestamps using whisper-timestamped.
+    Groups words into lines with specified words_per_line.
+    """
+    model = load_whisper_model(model_size)
+
+    # Get word-level timestamps
+    result = whisper_timestamped.transcribe_timestamped(
+        model, audio_path, language="en", task="transcribe", verbose=False
+    )
+
+    # Extract all words with timestamps
+    words = []
+    for segment in result.get("segments", []):
+        for word_info in segment.get("words", []):
+            word_text = word_info.get("text", "").strip()
+            if word_text:
+                words.append(
+                    {
+                        "text": word_text,
+                        "start": word_info.get("start", 0),
+                        "end": word_info.get("end", 0),
+                    }
+                )
+
+    if not words:
+        return []
+
+    # Group words into lines (words_per_line words per caption)
+    segments = []
+    current_line_words = []
+    line_start = words[0]["start"]
+    line_end = words[0]["end"]
+
+    for i, word in enumerate(words):
+        current_line_words.append(word["text"])
+        line_end = word["end"]
+
+        # Create a new segment when we hit words_per_line
+        if len(current_line_words) >= words_per_line:
+            segments.append(
+                {
+                    "id": len(segments),
+                    "start": line_start,
+                    "end": line_end,
+                    "text": " ".join(current_line_words),
+                }
+            )
+            current_line_words = []
+            # Start next line from next word's start time
+            if i + 1 < len(words):
+                line_start = words[i + 1]["start"]
+
+    # Add remaining words as final segment
+    if current_line_words:
+        segments.append(
+            {
+                "id": len(segments),
+                "start": line_start,
+                "end": line_end,
+                "text": " ".join(current_line_words),
+            }
+        )
+
+    return segments
+
+
+# ─────────────────────────────────────────────
 # SRT GENERATION
 # ─────────────────────────────────────────────
+
 
 def seconds_to_srt_time(seconds: float) -> str:
     """Convert float seconds → HH:MM:SS,mmm (SRT format)."""
@@ -154,23 +245,124 @@ def segments_to_srt(segments: list[dict]) -> str:
 
 
 # ─────────────────────────────────────────────
+# PREMIERE PRO FORMAT SUPPORT
+# ─────────────────────────────────────────────
+
+
+def get_video_fps(video_path: str) -> float:
+    """Extract video frame rate using ffprobe."""
+    try:
+        import json
+        import subprocess
+
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=r_frame_rate",
+            "-of",
+            "json",
+            video_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        data = json.loads(result.stdout)
+        fps_str = data["streams"][0]["r_frame_rate"]
+        # Parse fraction like "30000/1001" or "25/1"
+        if "/" in fps_str:
+            num, den = fps_str.split("/")
+            fps = float(num) / float(den)
+        else:
+            fps = float(fps_str)
+        return fps
+    except Exception as e:
+        print(f"Warning: Could not detect FPS, defaulting to 25: {e}")
+        return 25.0
+
+
+def seconds_to_timecode(seconds: float, fps: float = 25.0) -> str:
+    """Convert seconds to HH:MM:SS:FF format for Premiere Pro."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    frames = int((seconds - int(seconds)) * fps)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}:{frames:02d}"
+
+
+def segments_to_pr_text(segments: list[dict], fps: float = 25.0) -> str:
+    """
+    Convert segments to Premiere Pro Text format (.txt).
+    Format: HH:MM:SS:FF - HH:MM:SS:FF
+    """
+    lines = []
+    for seg in segments:
+        start_tc = seconds_to_timecode(seg["start"], fps)
+        end_tc = seconds_to_timecode(seg["end"], fps)
+        lines.append(f"{start_tc} - {end_tc}")
+        lines.append(seg["text"].strip())
+        lines.append("")  # Blank line between entries
+    return "\n".join(lines)
+
+
+def segments_to_pr_srt(segments: list[dict]) -> str:
+    """
+    Convert segments to frame-accurate SRT format.
+    Same as standard SRT but with precise timing.
+    """
+    lines = []
+    for i, seg in enumerate(segments, start=1):
+        start = seconds_to_srt_time(seg["start"])
+        end = seconds_to_srt_time(seg["end"])
+        text = seg["text"].strip()
+        lines.append(f"{i}")
+        lines.append(f"{start} --> {end}")
+        lines.append(text)
+        lines.append("")  # Blank line
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────
 # SINGLE VIDEO PIPELINE
 # ─────────────────────────────────────────────
 
 # Supported video extensions
-VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".m4v", ".ts", ".wmv"}
+VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".mkv",
+    ".webm",
+    ".flv",
+    ".m4v",
+    ".ts",
+    ".wmv",
+}
 
 
-def process_video(video_path: str, output_dir: str) -> str | None:
+def process_video(
+    video_path: str,
+    output_dir: str,
+    word_level: bool = False,
+    words_per_line: int = 2,
+    output_format: str = "srt",
+) -> str | None:
     """
     Full pipeline for a single video:
-    video → audio → transcription → SRT file
+    video → audio → transcription → caption file
 
-    Returns the path to the generated SRT file, or None on failure.
+    Returns the path to the generated file, or None on failure.
     """
     video_name = os.path.splitext(os.path.basename(video_path))[0]
-    srt_filename = f"{video_name}.srt"
-    srt_path = os.path.join(output_dir, srt_filename)
+
+    # Determine output filename based on format
+    if output_format == "pr-text":
+        output_filename = f"{video_name}.txt"
+    else:
+        output_filename = f"{video_name}.srt"
+
+    output_path = os.path.join(output_dir, output_filename)
 
     with tempfile.TemporaryDirectory() as tmp:
         # Step 1 — extract audio
@@ -182,31 +374,58 @@ def process_video(video_path: str, output_dir: str) -> str | None:
             return None
 
         # Step 2 — transcribe
-        print(f"  🤖 Transcribing... (may take a while on CPU)")
-        try:
-            segments = transcribe(audio_path)
-        except Exception as e:
-            print(f"  ❌ Transcription failed: {e}")
-            return None
+        if word_level:
+            print(f"  🤖 Transcribing with word-level timestamps...")
+            try:
+                segments = transcribe_word_level(
+                    audio_path, words_per_line=words_per_line
+                )
+            except Exception as e:
+                print(f"  ❌ Word-level transcription failed: {e}")
+                return None
+        else:
+            print(f"  🤖 Transcribing... (may take a while on CPU)")
+            try:
+                segments = transcribe(audio_path)
+            except Exception as e:
+                print(f"  ❌ Transcription failed: {e}")
+                return None
 
         if not segments:
             print(f"  ⚠️  No speech detected — skipping.")
             return None
 
-        # Step 3 — generate SRT
-        print(f"  📝 Generating SRT...")
-        srt_content = segments_to_srt(segments)
+        # Step 3 — detect FPS for Premiere Pro formats
+        fps = 25.0
+        if output_format in ["pr-text", "pr-srt"]:
+            print(f"  🎬 Detecting video FPS...")
+            fps = get_video_fps(video_path)
+            print(f"     FPS: {fps}")
 
-        with open(srt_path, "w", encoding="utf-8") as f:
-            f.write(srt_content)
+        # Step 4 — generate output based on format
+        print(f"  📝 Generating caption file ({output_format})...")
 
-        print(f"  ✅ Done! {len(segments)} segments → {srt_path}")
-        return srt_path
+        if output_format == "pr-text":
+            # Premiere Pro Text format (.txt)
+            content = segments_to_pr_text(segments, fps)
+        elif output_format == "pr-srt":
+            # Premiere Pro optimized SRT (frame-accurate)
+            content = segments_to_pr_srt(segments)
+        else:
+            # Standard SRT
+            content = segments_to_srt(segments)
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        print(f"  ✅ Done! {len(segments)} segments → {output_path}")
+        return output_path
 
 
 # ─────────────────────────────────────────────
 # BATCH RUNNER
 # ─────────────────────────────────────────────
+
 
 def collect_videos(inputs: list[str]) -> list[str]:
     """
@@ -241,8 +460,14 @@ def collect_videos(inputs: list[str]) -> list[str]:
     return videos
 
 
-def run_batch(videos: list[str], output_dir: str):
-    """Process a list of video files and write SRT files to output_dir."""
+def run_batch(
+    videos: list[str],
+    output_dir: str,
+    word_level: bool = False,
+    words_per_line: int = 2,
+    output_format: str = "srt",
+):
+    """Process a list of video files and write caption files to output_dir."""
 
     total = len(videos)
     succeeded = []
@@ -252,7 +477,16 @@ def run_batch(videos: list[str], output_dir: str):
     print("─" * 60)
     load_model()
     print("─" * 60)
-    print(f"Starting batch: {total} video(s) → SRTs will be saved to: {output_dir}\n")
+
+    format_name = {
+        "srt": "Standard SRT",
+        "pr-srt": "Premiere Pro SRT",
+        "pr-text": "Premiere Pro Text",
+    }.get(output_format, "SRT")
+
+    ext = ".txt" if output_format == "pr-text" else ".srt"
+    print(f"Starting batch: {total} video(s) → {format_name} ({ext})")
+    print(f"Output directory: {output_dir}\n")
 
     batch_start = time.time()
 
@@ -260,7 +494,9 @@ def run_batch(videos: list[str], output_dir: str):
         print(f"[{i}/{total}] {os.path.basename(video_path)}")
         video_start = time.time()
 
-        result = process_video(video_path, output_dir)
+        result = process_video(
+            video_path, output_dir, word_level, words_per_line, output_format
+        )
 
         elapsed = time.time() - video_start
         print(f"  ⏱  Took {elapsed:.1f}s\n")
@@ -290,6 +526,7 @@ def run_batch(videos: list[str], output_dir: str):
 # ─────────────────────────────────────────────
 # CLI ENTRY POINT
 # ─────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -334,6 +571,33 @@ def main():
         ),
     )
 
+    parser.add_argument(
+        "--word-level",
+        "-w",
+        action="store_true",
+        help="Enable word-level timestamps (karaoke-style captions, 2-3 words per line)",
+    )
+
+    parser.add_argument(
+        "--words-per-line",
+        "-wp",
+        type=int,
+        default=2,
+        metavar="N",
+        help="Number of words per caption line when using --word-level (default: 2, max: 5)",
+    )
+
+    parser.add_argument(
+        "--format",
+        "-f",
+        choices=["srt", "pr-srt", "pr-text"],
+        default="srt",
+        help=(
+            "Output format: srt (standard), pr-srt (Premiere Pro SRT), "
+            "pr-text (Premiere Pro Text). Default: srt"
+        ),
+    )
+
     args = parser.parse_args()
 
     # Collect all video files
@@ -363,7 +627,17 @@ def main():
 
     print(f"📂 SRT files will be saved to: {output_dir}\n")
 
-    run_batch(videos, output_dir)
+    if args.word_level:
+        print(f"📝 Word-level mode enabled: {args.words_per_line} words per line")
+
+    format_name = {
+        "srt": "Standard SRT",
+        "pr-srt": "Premiere Pro SRT",
+        "pr-text": "Premiere Pro Text",
+    }.get(args.format, "SRT")
+    print(f"🎬 Output format: {format_name}\n")
+
+    run_batch(videos, output_dir, args.word_level, args.words_per_line, args.format)
 
 
 if __name__ == "__main__":
