@@ -3,7 +3,7 @@ title: HinglishCaps
 colorFrom: red
 colorTo: yellow
 sdk: gradio
-sdk_version: "4.0.0"
+sdk_version: "6.0.0"
 python_version: "3.11"
 app_file: app.py
 pinned: false
@@ -111,11 +111,23 @@ python batch.py /videos/ --output /subtitles/
 
 ### Web Interface
 
+#### Single Video Processing:
 1. Open the app in your browser at `http://localhost:7860`
-2. Upload a video file using the upload area
-3. Click **Generate Captions**
-4. The progress bar will appear — wait for it to complete
-5. Download the `.srt` file once it shows up
+2. Go to the **Single Video** tab
+3. Upload a video file using the upload area
+4. Configure options (word-level timestamps, output format)
+5. Click **Generate Captions**
+6. The progress bar will appear — wait for it to complete
+7. Download the caption file once it shows up
+
+#### Batch Processing (Multiple Videos):
+1. Open the app in your browser at `http://localhost:7860`
+2. Go to the **Batch Processing** tab
+3. Upload multiple video files or select a folder containing videos
+4. Configure options (word-level timestamps, output format)
+5. Click **Process All Videos**
+6. Wait for processing to complete (progress shown for each video)
+7. Download the ZIP file containing all caption files
 
 ### Batch Processing CLI
 

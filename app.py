@@ -1,5 +1,6 @@
 import datetime
 import os
+import zipfile
 
 # import shutil  # ← not needed in new pipeline (shutil.copy removed); kept for reference
 import tempfile
@@ -476,6 +477,111 @@ def generate_captions(
         )
 
 
+def generate_captions_batch(
+    video_files,
+    word_level: bool = False,
+    words_per_line: int = 2,
+    output_format: str = "srt",
+    progress=gr.Progress(),
+):
+    """Batch pipeline: multiple videos → ZIP file with caption files."""
+    if not video_files:
+        return None, "Please upload video files first."
+
+    # Filter for valid video files
+    video_extensions = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".m4v", ".ts", ".wmv"}
+    valid_videos = []
+    for file_path in video_files:
+        if os.path.splitext(file_path)[1].lower() in video_extensions:
+            valid_videos.append(file_path)
+    
+    if not valid_videos:
+        return None, "No valid video files found. Supported formats: MP4, MOV, AVI, MKV, WEBM, FLV, M4V, TS, WMV."
+
+    total_videos = len(valid_videos)
+    progress(0, desc=f"Starting batch processing of {total_videos} videos...")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        results = []
+        failed = []
+        
+        for i, video_file in enumerate(valid_videos):
+            video_name = os.path.basename(video_file)
+            progress(i / total_videos, desc=f"Processing {video_name} ({i+1}/{total_videos})...")
+            
+            try:
+                # Extract audio
+                audio_path = extract_audio(video_file, tmp)
+                
+                # Transcribe
+                if word_level:
+                    segments = transcribe_word_level(audio_path, words_per_line=words_per_line)
+                else:
+                    segments = transcribe(audio_path)
+                
+                if not segments:
+                    failed.append(f"{video_name}: No speech detected")
+                    continue
+                
+                # Detect FPS for Premiere Pro formats
+                fps = 25.0
+                if output_format in ["pr-text", "pr-srt"]:
+                    fps = get_video_fps(video_file)
+                
+                # Generate output based on format
+                if output_format == "pr-text":
+                    content = segments_to_pr_text(segments, fps)
+                    output_filename = f"{os.path.splitext(video_name)[0]}_captions.txt"
+                elif output_format == "pr-srt":
+                    content = segments_to_pr_srt(segments)
+                    output_filename = f"{os.path.splitext(video_name)[0]}_captions.srt"
+                else:
+                    content = segments_to_srt(segments)
+                    output_filename = f"{os.path.splitext(video_name)[0]}_captions.srt"
+                
+                # Save to temporary directory
+                output_path = os.path.join(tmp, output_filename)
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                
+                results.append((output_path, output_filename, len(segments)))
+                
+            except Exception as e:
+                failed.append(f"{video_name}: {str(e)}")
+                continue
+        
+        progress(0.9, desc="Creating ZIP archive...")
+        
+        if not results:
+            return None, f"All videos failed to process. Errors: {', '.join(failed)}"
+        
+        # Create ZIP file
+        zip_path = os.path.join(tempfile.gettempdir(), "hinglishcaps_batch.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file_path, filename, segment_count in results:
+                zipf.write(file_path, filename)
+        
+        progress(1.0, desc="Done!")
+        
+        # Generate status message
+        success_count = len(results)
+        format_name = {
+            "srt": "Standard SRT",
+            "pr-srt": "Premiere Pro SRT",
+            "pr-text": "Premiere Pro Text",
+        }.get(output_format, "SRT")
+        
+        status_msg = f"Batch processing complete!\n"
+        status_msg += f"✅ Successfully processed: {success_count}/{total_videos} videos\n"
+        status_msg += f"📁 Output format: {format_name}\n"
+        status_msg += f"📦 Download ZIP file containing all caption files"
+        
+        if failed:
+            status_msg += f"\n\n❌ Failed videos:\n" + "\n".join(f"  • {f}" for f in failed)
+        
+        return zip_path, status_msg
+
+
 # ── END NEW ──────────────────────────────────────────────────────────────────
 
 
@@ -583,43 +689,94 @@ def build_ui():
             </div>
         """)
 
-        with gr.Row():
-            video_input = gr.Video(label="Upload Video", sources=["upload"])
+        with gr.Tabs():
+            # Tab 1: Single Video Processing
+            with gr.TabItem("Single Video"):
+                with gr.Row():
+                    video_input = gr.Video(label="Upload Video", sources=["upload"])
 
-        with gr.Row():
-            with gr.Column():
-                word_level_check = gr.Checkbox(
-                    label="Word-level timestamps",
-                    value=False,
-                    info="Split captions into 2-3 words per line (karaoke style)",
-                )
-                words_per_line_slider = gr.Slider(
-                    minimum=1,
-                    maximum=5,
-                    value=2,
-                    step=1,
-                    label="Words per caption line",
-                    visible=False,  # Hidden by default, shown when word-level is enabled
-                )
+                with gr.Row():
+                    with gr.Column():
+                        word_level_check = gr.Checkbox(
+                            label="Word-level timestamps",
+                            value=False,
+                            info="Split captions into 2-3 words per line (karaoke style)",
+                        )
+                        words_per_line_slider = gr.Slider(
+                            minimum=1,
+                            maximum=5,
+                            value=2,
+                            step=1,
+                            label="Words per caption line",
+                            visible=False,
+                        )
 
-        with gr.Row():
-            with gr.Column():
-                output_format_dropdown = gr.Dropdown(
-                    choices=[
-                        ("Standard SRT", "srt"),
-                        ("Premiere Pro SRT", "pr-srt"),
-                        ("Premiere Pro Text (.txt)", "pr-text"),
-                    ],
-                    value="srt",
-                    label="Output Format",
-                    info="Choose format for your video editor",
-                )
+                with gr.Row():
+                    with gr.Column():
+                        output_format_dropdown = gr.Dropdown(
+                            choices=[
+                                ("Standard SRT", "srt"),
+                                ("Premiere Pro SRT", "pr-srt"),
+                                ("Premiere Pro Text (.txt)", "pr-text"),
+                            ],
+                            value="srt",
+                            label="Output Format",
+                            info="Choose format for your video editor",
+                        )
 
-        run_btn = gr.Button("Generate Captions ✦", variant="primary", size="lg")
-        status_box = gr.Textbox(
-            label="Status", interactive=False, lines=1, value="Waiting for upload..."
-        )
-        srt_output = gr.File(label="Download .SRT File")
+                single_run_btn = gr.Button("Generate Captions ✦", variant="primary", size="lg")
+                single_status_box = gr.Textbox(
+                    label="Status", interactive=False, lines=2, value="Upload a video file to get started..."
+                )
+                single_output = gr.File(label="Download Caption File")
+
+            # Tab 2: Batch Processing (Multiple Videos)
+            with gr.TabItem("Batch Processing"):
+                gr.Markdown("### Process Multiple Videos at Once")
+                gr.Markdown("Upload multiple video files or select a folder containing videos. All supported formats will be processed.")
+                
+                with gr.Row():
+                    batch_video_input = gr.File(
+                        label="Upload Videos or Folder",
+                        file_count="directory",
+                        file_types=["video"],
+                        type="filepath"
+                    )
+                
+                with gr.Row():
+                    with gr.Column():
+                        batch_word_level_check = gr.Checkbox(
+                            label="Word-level timestamps",
+                            value=False,
+                            info="Split captions into 2-3 words per line (karaoke style)",
+                        )
+                        batch_words_per_line_slider = gr.Slider(
+                            minimum=1,
+                            maximum=5,
+                            value=2,
+                            step=1,
+                            label="Words per caption line",
+                            visible=False,
+                        )
+
+                with gr.Row():
+                    with gr.Column():
+                        batch_output_format_dropdown = gr.Dropdown(
+                            choices=[
+                                ("Standard SRT", "srt"),
+                                ("Premiere Pro SRT", "pr-srt"),
+                                ("Premiere Pro Text (.txt)", "pr-text"),
+                            ],
+                            value="srt",
+                            label="Output Format",
+                            info="Choose format for your video editor",
+                        )
+
+                batch_run_btn = gr.Button("Process All Videos ✦", variant="primary", size="lg")
+                batch_status_box = gr.Textbox(
+                    label="Status", interactive=False, lines=3, value="Upload video files to get started..."
+                )
+                batch_output = gr.File(label="Download All Captions (ZIP)")
 
         gr.HTML("""
             <div style="color:#555; font-size:0.8rem; padding:1rem 0; border-top:1px solid #1e1e2a; margin-top:1.5rem">
@@ -630,14 +787,22 @@ def build_ui():
             </div>
         """)
 
-        # Show/hide words_per_line slider based on word_level checkbox
+        # Show/hide words_per_line slider based on word_level checkbox (Single)
         word_level_check.change(
             fn=lambda x: gr.update(visible=x),
             inputs=[word_level_check],
             outputs=[words_per_line_slider],
         )
 
-        run_btn.click(
+        # Show/hide words_per_line slider based on word_level checkbox (Batch)
+        batch_word_level_check.change(
+            fn=lambda x: gr.update(visible=x),
+            inputs=[batch_word_level_check],
+            outputs=[batch_words_per_line_slider],
+        )
+
+        # Single video processing
+        single_run_btn.click(
             fn=generate_captions,
             inputs=[
                 video_input,
@@ -645,7 +810,19 @@ def build_ui():
                 words_per_line_slider,
                 output_format_dropdown,
             ],
-            outputs=[srt_output, status_box],
+            outputs=[single_output, single_status_box],
+        )
+
+        # Batch processing
+        batch_run_btn.click(
+            fn=generate_captions_batch,
+            inputs=[
+                batch_video_input,
+                batch_word_level_check,
+                batch_words_per_line_slider,
+                batch_output_format_dropdown,
+            ],
+            outputs=[batch_output, batch_status_box],
         )
 
     return demo

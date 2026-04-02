@@ -12,6 +12,6 @@ whisper-timestamped>=1.14.0
 
 # UI
 # UI - using Python 3.11
-gradio==4.0.0
-# Pin huggingface_hub to version that still has HfFolder (deprecated in 0.20.0)
-huggingface-hub==0.19.4
+gradio>=6.0.0
+# Gradio 6.x doesn't have HfFolder import issue
+# No monkey patch needed, but we keep it for compatibility
