@@ -120,7 +120,7 @@ def load_model():
             return_timestamps=True,
             ignore_warning=True,
         )
-        print("Model loaded successfully!")
+        print("Model loaded successfully!\n")
     return _model_cache["apex"]
 
 
@@ -364,22 +364,22 @@ def segments_to_pr_srt(segments: list[dict]) -> str:
 # def generate_captions(video_file, model_size: str, language: str):
 #     """Full pipeline: video → SRT file."""
 #     if video_file is None:
-#         return None, "⚠️ Please upload a video file first."
+#         return None, "Please upload a video file first."
 #
 #     with tempfile.TemporaryDirectory() as tmp:
 #         # Step 1 – extract audio
-#         yield None, "🎵 Extracting audio from video..."
+#         yield None, "Extracting audio from video..."
 #         audio_path = extract_audio(video_file, tmp)
 #
 #         # Step 2 – transcribe
 #         yield (
 #             None,
-#             f"🤖 Transcribing with Whisper ({model_size})... (this may take a minute)",
+#             f"Transcribing with Whisper ({model_size})... (this may take a minute)",
 #         )
 #         segments = transcribe(audio_path, model_size, language)
 #
 #         # Step 3 – build SRT
-#         yield None, "📝 Generating SRT file..."
+#         yield None, "Generating SRT file..."
 #         srt_content = segments_to_srt(segments)
 #
 #         # Step 4 – save SRT
@@ -394,7 +394,7 @@ def segments_to_pr_srt(segments: list[dict]) -> str:
 #         shutil.copy(srt_path, output_path)
 #
 #         num_lines = len(segments)
-#         yield output_path, f"✅ Done! Generated {num_lines} caption segments."
+#         yield output_path, f"Done! Generated {num_lines} caption segments."
 #
 # ── END OLD ──────────────────────────────────────────────────────────────────
 
@@ -411,18 +411,18 @@ def generate_captions(
 ):
     """Full pipeline: video → caption file."""
     if video_file is None:
-        return None, "⚠️ Please upload a video file first."
+        return None, "Please upload a video file first."
 
     with tempfile.TemporaryDirectory() as tmp:
         # Step 1 — extract audio
-        progress(0.1, desc="🎵 Extracting audio...")
+        progress(0.1, desc="Extracting audio...")
         audio_path = extract_audio(video_file, tmp)
 
         # Step 2 — transcribe
         if word_level:
             progress(
                 0.3,
-                desc="🤖 Transcribing with word-level timestamps... (downloading Whisper model if needed)",
+                desc="Transcribing with word-level timestamps... (downloading Whisper model if needed)",
             )
             segments = transcribe_word_level(audio_path, words_per_line=words_per_line)
         else:
@@ -430,18 +430,18 @@ def generate_captions(
             # On first run the ~1.5 GB model downloads here, then transcription runs on CPU.
             progress(
                 0.3,
-                desc="🤖 Transcribing... (bar stays at 30% — normal. First run downloads ~1.5 GB model)",
+                desc="Transcribing... (bar stays at 30% — normal. First run downloads ~1.5 GB model)",
             )
             segments = transcribe(audio_path)
 
         # Step 3 — detect FPS for Premiere Pro formats
         fps = 25.0
         if output_format in ["pr-text", "pr-srt"]:
-            progress(0.85, desc="🎬 Detecting video FPS...")
+            progress(0.85, desc="Detecting video FPS...")
             fps = get_video_fps(video_file)
 
         # Step 4 — generate output based on format
-        progress(0.9, desc="📝 Generating caption file...")
+        progress(0.9, desc="Generating caption file...")
 
         if output_format == "pr-text":
             # Premiere Pro Text format (.txt)
@@ -461,7 +461,7 @@ def generate_captions(
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
 
-        progress(1.0, desc="✅ Done!")
+        progress(1.0, desc="Done!")
         num_segments = len(segments)
 
         format_name = {
@@ -472,7 +472,7 @@ def generate_captions(
 
         return (
             output_path,
-            f"✅ Done! Generated {num_segments} caption segments ({format_name}).",
+            f"Done! Generated {num_segments} caption segments ({format_name}).",
         )
 
 

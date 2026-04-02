@@ -57,7 +57,7 @@ def load_model():
             return_timestamps=True,
             ignore_warning=True,
         )
-        print("✅ Model loaded successfully!\n")
+        print("Model loaded successfully!\n")
 
     return _model_cache["apex"]
 
@@ -366,44 +366,44 @@ def process_video(
 
     with tempfile.TemporaryDirectory() as tmp:
         # Step 1 — extract audio
-        print(f"  🎵 Extracting audio...")
+        print("  Extracting audio...")
         try:
             audio_path = extract_audio(video_path, tmp)
         except Exception as e:
-            print(f"  ❌ Audio extraction failed: {e}")
+            print(f"  Audio extraction failed: {e}")
             return None
 
         # Step 2 — transcribe
         if word_level:
-            print(f"  🤖 Transcribing with word-level timestamps...")
+            print("  Transcribing with word-level timestamps...")
             try:
                 segments = transcribe_word_level(
                     audio_path, words_per_line=words_per_line
                 )
             except Exception as e:
-                print(f"  ❌ Word-level transcription failed: {e}")
+                print(f"  Word-level transcription failed: {e}")
                 return None
         else:
-            print(f"  🤖 Transcribing... (may take a while on CPU)")
+            print("  Transcribing... (may take a while on CPU)")
             try:
                 segments = transcribe(audio_path)
             except Exception as e:
-                print(f"  ❌ Transcription failed: {e}")
+                print(f"  Transcription failed: {e}")
                 return None
 
         if not segments:
-            print(f"  ⚠️  No speech detected — skipping.")
+            print("No speech detected - skipping.")
             return None
 
         # Step 3 — detect FPS for Premiere Pro formats
         fps = 25.0
         if output_format in ["pr-text", "pr-srt"]:
-            print(f"  🎬 Detecting video FPS...")
+            print("  Detecting video FPS...")
             fps = get_video_fps(video_path)
             print(f"     FPS: {fps}")
 
         # Step 4 — generate output based on format
-        print(f"  📝 Generating caption file ({output_format})...")
+        print(f"  Generating caption file ({output_format})...")
 
         if output_format == "pr-text":
             # Premiere Pro Text format (.txt)
@@ -418,7 +418,7 @@ def process_video(
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
 
-        print(f"  ✅ Done! {len(segments)} segments → {output_path}")
+        print(f"  Done! {len(segments)} segments -> {output_path}")
         return output_path
 
 
@@ -442,7 +442,7 @@ def collect_videos(inputs: list[str]) -> list[str]:
             if ext in VIDEO_EXTENSIONS:
                 videos.append(path)
             else:
-                print(f"⚠️  Skipping '{path}' — not a supported video format.")
+                print(f"Skipping '{path}' — not a supported video format.")
 
         elif os.path.isdir(path):
             found = [
@@ -451,11 +451,11 @@ def collect_videos(inputs: list[str]) -> list[str]:
                 if os.path.splitext(f)[1].lower() in VIDEO_EXTENSIONS
             ]
             if not found:
-                print(f"⚠️  No videos found in folder: {path}")
+                print(f"No videos found in folder: {path}")
             videos.extend(found)
 
         else:
-            print(f"⚠️  Path not found: {path}")
+            print(f"Path not found: {path}")
 
     return videos
 
@@ -512,8 +512,8 @@ def run_batch(
 
     print("─" * 60)
     print(f"Batch complete in {minutes}m {seconds}s")
-    print(f"  ✅ Succeeded : {len(succeeded)}/{total}")
-    print(f"  ❌ Failed    : {len(failed)}/{total}")
+    print(f"  Succeeded : {len(succeeded)}/{total}")
+    print(f"  Failed    : {len(failed)}/{total}")
 
     if failed:
         print("\nFailed videos:")
@@ -604,10 +604,10 @@ def main():
     videos = collect_videos(args.inputs)
 
     if not videos:
-        print("❌ No valid video files found. Nothing to do.")
+        print("No valid video files found. Nothing to do.")
         sys.exit(1)
 
-    print(f"\n🎬 Found {len(videos)} video(s) to process:")
+    print(f"\nFound {len(videos)} video(s) to process:")
     for v in videos:
         print(f"   {v}")
     print()
@@ -625,17 +625,17 @@ def main():
         else:
             output_dir = os.getcwd()
 
-    print(f"📂 SRT files will be saved to: {output_dir}\n")
+    print(f"Output directory: {output_dir}\n")
 
     if args.word_level:
-        print(f"📝 Word-level mode enabled: {args.words_per_line} words per line")
+        print(f"Word-level mode: {args.words_per_line} words per line")
 
     format_name = {
         "srt": "Standard SRT",
         "pr-srt": "Premiere Pro SRT",
         "pr-text": "Premiere Pro Text",
     }.get(args.format, "SRT")
-    print(f"🎬 Output format: {format_name}\n")
+    print(f"Output format: {format_name}\n")
 
     run_batch(videos, output_dir, args.word_level, args.words_per_line, args.format)
 

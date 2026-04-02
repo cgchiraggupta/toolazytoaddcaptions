@@ -1,6 +1,6 @@
 # HinglishCaps - Simple Installation
 
-## 🚀 Quick Start (For Everyone)
+## Quick Start (For Everyone)
 
 ### **For Mac Users:**
 1. **Download** the HinglishCaps folder
@@ -14,7 +14,7 @@
 3. **Follow the instructions** in Command Prompt
 4. **That's it!** The web interface opens automatically
 
-## 📱 What Happens After Installation
+## What Happens After Installation
 
 ### **Web Interface (Recommended for most users):**
 - Opens at `http://localhost:7860`
@@ -35,7 +35,7 @@ venv\Scripts\activate
 python batch.py video1.mp4 video2.mov
 ```
 
-## 🛠️ Manual Installation (If scripts don't work)
+## Manual Installation (If scripts don't work)
 
 ### **1. Install Python 3.9+**
 - **Mac:** Already installed or get from [python.org](https://python.org)
@@ -84,12 +84,12 @@ python batch.py your-video.mp4
 - Navigate to folder: `cd /path/to/hinglishcaps`
 - Run script: `./install-mac.sh` or `install-windows.bat`
 
-## 🌐 Online Version
+## Online Version
 
 Don't want to install anything? Use the online version:
 **https://huggingface.co/spaces/Ppreyy/hinglishcaptions**
 
-## 📞 Support
+## Support
 
 - **GitHub Issues:** Report problems
 - **Email:** cg077593@gmail.com
@@ -97,4 +97,4 @@ Don't want to install anything? Use the online version:
 
 ---
 
-**That's all!** Double-click the installer for your system and start creating captions in minutes. 🎬
+**That's all!** Double-click the installer for your system and start creating captions in minutes.

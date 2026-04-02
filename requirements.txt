@@ -11,4 +11,7 @@ ffmpeg-python>=0.2.0
 whisper-timestamped>=1.14.0
 
 # UI
-gradio>=4.0.0
+# UI - using Python 3.11
+gradio==4.0.0
+# Pin huggingface_hub to version that still has HfFolder (deprecated in 0.20.0)
+huggingface-hub==0.19.4

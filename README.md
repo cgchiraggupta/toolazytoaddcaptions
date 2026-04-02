@@ -1,3 +1,15 @@
+---
+title: HinglishCaps
+colorFrom: red
+colorTo: yellow
+sdk: gradio
+sdk_version: "4.0.0"
+python_version: "3.11"
+app_file: app.py
+pinned: false
+---
+
+
 # HinglishCaps
 
 Auto-generate subtitles for Hindi, English, and Hinglish videos.
