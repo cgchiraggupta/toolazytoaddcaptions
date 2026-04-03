@@ -1,3 +1,6 @@
+# Full requirements including web interface
+# For running the web app locally
+
 # Core ML libraries
 torch>=2.0.0
 transformers>=4.35.0
@@ -8,5 +11,9 @@ accelerate>=0.24.0
 # Audio/Video processing
 ffmpeg-python>=0.2.0
 
+# Web interface
+gradio==4.44.1
+huggingface-hub<0.20.0  # Required for Gradio 4.44.1 compatibility
+
 # Utilities
-tqdm>=4.65.0  # Progress bars
+tqdm>=4.65.0

@@ -11,6 +11,7 @@ files_to_upload = [
     ("batch.py", "batch.py"),
     ("requirements.txt", "requirements.txt"),
     ("README.md", "README.md"),
+    ("packages.txt", "packages.txt"),
 ]
 
 for local_path, path_in_repo in files_to_upload:

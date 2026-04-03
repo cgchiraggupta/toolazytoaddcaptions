@@ -30,11 +30,11 @@ def load_model():
 
         model_id = "Oriserve/Whisper-Hindi2Hinglish-Apex"
         device = "cpu"
-        torch_dtype = torch.float32
+        dtype = torch.float32
 
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_id,
-            torch_dtype=torch_dtype,
+            dtype=dtype,
             low_cpu_mem_usage=True,
             use_safetensors=True,
         ).to(device)

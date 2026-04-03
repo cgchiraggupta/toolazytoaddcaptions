@@ -1,100 +1,62 @@
-# HinglishCaps - Simple Installation
+# HinglishCaps - Quick Local Setup
 
-## Quick Start (For Everyone)
+This tool is meant to run locally on your computer.
 
-### **For Mac Users:**
-1. **Download** the HinglishCaps folder
-2. **Double-click** `install-mac.sh`
-3. **Follow the instructions** in Terminal
-4. **That's it!** The web interface opens automatically
+## macOS
 
-### **For Windows Users:**
-1. **Download** the HinglishCaps folder  
-2. **Double-click** `install-windows.bat`
-3. **Follow the instructions** in Command Prompt
-4. **That's it!** The web interface opens automatically
+1. Install Python from [python.org](https://www.python.org/downloads/macos/) if needed
+2. Install Homebrew if needed, then run:
 
-## What Happens After Installation
-
-### **Web Interface (Recommended for most users):**
-- Opens at `http://localhost:7860`
-- Upload videos, get SRT files
-- User-friendly interface
-
-### **Batch Processing (For multiple videos):**
 ```bash
-# After installation, open Terminal/Command Prompt:
-cd /path/to/hinglishcaps
+brew install ffmpeg
+```
 
-# Mac:
+3. Open Terminal in the project folder
+4. Run:
+
+```bash
+python3 -m venv venv
 source venv/bin/activate
-python batch.py video1.mp4 video2.mov
-
-# Windows:
-venv\Scripts\activate
-python batch.py video1.mp4 video2.mov
+pip install -r requirements_full.txt
+python app_full.py
 ```
 
-## Manual Installation (If scripts don't work)
+5. Open:
 
-### **1. Install Python 3.9+**
-- **Mac:** Already installed or get from [python.org](https://python.org)
-- **Windows:** Download from [python.org](https://python.org) - **CHECK "Add Python to PATH"**
+```text
+http://localhost:7860
+```
 
-### **2. Install FFmpeg**
-- **Mac:** `brew install ffmpeg` in Terminal
-- **Windows:** Download from [gyan.dev/ffmpeg](https://www.gyan.dev/ffmpeg/builds/)
+## Windows
 
-### **3. Run HinglishCaps**
-```bash
-# Navigate to HinglishCaps folder
-cd /path/to/hinglishcaps
+1. Install Python from [python.org](https://www.python.org/downloads/windows/) and check `Add Python to PATH`
+2. Install FFmpeg and add it to `Path`
+3. Open Command Prompt or PowerShell in the project folder
+4. Run:
 
-# Create virtual environment
+```powershell
 python -m venv venv
-
-# Activate it
-# Mac: source venv/bin/activate
-# Windows: venv\Scripts\activate
-
-# Install packages
-pip install -r requirements.txt
-
-# Run web interface
-python app.py
-
-# Or run batch processing
-python batch.py your-video.mp4
+venv\Scripts\activate
+pip install -r requirements_full.txt
+python app_full.py
 ```
 
-## ❓ Need Help?
+5. Open:
 
-### **Common Issues:**
+```text
+http://localhost:7860
+```
 
-**"Python not found"**
-- Windows: Reinstall Python, check "Add to PATH"
-- Mac: Install Python from python.org
+## If you only want command-line mode
 
-**"FFmpeg not found"**
-- Follow FFmpeg installation instructions above
-- Restart computer after adding to PATH
+```bash
+python simple_caps.py your_video.mp4
+```
 
-**Script closes immediately**
-- Open Terminal/Command Prompt first
-- Navigate to folder: `cd /path/to/hinglishcaps`
-- Run script: `./install-mac.sh` or `install-windows.bat`
+## First run
 
-## Online Version
+The first run downloads the transcription model, so it takes longer.
 
-Don't want to install anything? Use the online version:
-**https://huggingface.co/spaces/Ppreyy/hinglishcaptions**
+## Help
 
-## Support
-
-- **GitHub Issues:** Report problems
-- **Email:** cg077593@gmail.com
-- **Response time:** 24-48 hours
-
----
-
-**That's all!** Double-click the installer for your system and start creating captions in minutes.
+See the full setup guide in [`README.md`](README.md).
