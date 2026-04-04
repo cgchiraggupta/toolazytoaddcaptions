@@ -1,120 +1,71 @@
 #!/bin/bash
 
-# HinglishCaps - Mac Installer
-# Double-click this file to install and run HinglishCaps
+set -e
 
-set -e  # Exit on error
-
-echo "════════════════════════════════════════════════════════════════════════════════"
-echo "                          HINGLISHCAPS INSTALLER"
-echo "════════════════════════════════════════════════════════════════════════════════"
+echo "=========================================================================="
+echo "                         HINGLISHCAPS MAC INSTALLER"
+echo "=========================================================================="
 echo ""
-echo "This will install HinglishCaps on your Mac. It will:"
-echo "1. Check for Python 3.9+"
-echo "2. Create a virtual environment"
-echo "3. Install required packages"
-echo "4. Check for FFmpeg"
-echo "5. Launch the web interface"
+echo "Recommended Python version: 3.12"
+echo "This installer will:"
+echo "1. Check for Python 3.12"
+echo "2. Check for FFmpeg"
+echo "3. Create a virtual environment"
+echo "4. Install web app dependencies"
+echo "5. Launch HinglishCaps locally"
 echo ""
-echo "════════════════════════════════════════════════════════════════════════════════"
 
-# Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
-# Check Python version
-echo "🔍 Checking Python version..."
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 is not installed."
-    echo "Please install Python 3.9 or later from: https://www.python.org/downloads/"
-    echo "Then run this script again."
-    exit 1
-fi
-
-PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-echo "✅ Found Python $PYTHON_VERSION"
-
-# Check if Python 3.9 or higher
-if [[ $(python3 -c 'import sys; print(sys.version_info >= (3, 9))') != "True" ]]; then
-    echo "❌ Python 3.9 or higher is required. You have Python $PYTHON_VERSION"
-    echo "Please upgrade Python from: https://www.python.org/downloads/"
-    exit 1
-fi
-
-# Check for FFmpeg
-echo "🔍 Checking for FFmpeg..."
-if ! command -v ffmpeg &> /dev/null; then
-    echo "⚠️  FFmpeg not found. Installing via Homebrew..."
-
-    if ! command -v brew &> /dev/null; then
-        echo "❌ Homebrew not installed. FFmpeg is required for audio extraction."
-        echo ""
-        echo "To install Homebrew, run this command in Terminal:"
-        echo '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
-        echo ""
-        echo "Then run this installer again."
+echo "Checking Python..."
+if command -v python3.12 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3.12)"
+elif command -v python3 >/dev/null 2>&1; then
+    PY_MINOR=$(python3 -c 'import sys; print(sys.version_info.minor)')
+    if [ "$PY_MINOR" -ge 10 ] && [ "$PY_MINOR" -le 12 ]; then
+        PYTHON_BIN="$(command -v python3)"
+    else
+        echo "Python $(python3 --version 2>&1) found, but HinglishCaps currently supports Python 3.10 to 3.12 best."
+        echo "Please install Python 3.12 and run again."
+        echo "Homebrew: brew install python@3.12"
+        echo "python.org: https://www.python.org/downloads/macos/"
         exit 1
     fi
-
-    echo "📦 Installing FFmpeg via Homebrew (this may take a minute)..."
-    brew install ffmpeg
-    echo "✅ FFmpeg installed successfully"
 else
-    echo "✅ FFmpeg is already installed"
-fi
-
-# Create virtual environment
-echo "🔧 Setting up virtual environment..."
-if [ ! -d "venv" ]; then
-    python3 -m venv venv
-    echo "✅ Virtual environment created"
-else
-    echo "✅ Virtual environment already exists"
-fi
-
-# Activate virtual environment and install packages
-echo "📦 Installing Python packages..."
-source venv/bin/activate
-
-# Upgrade pip first
-pip install --upgrade pip
-
-# Install requirements
-if [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt
-    echo "✅ Python packages installed"
-else
-    echo "❌ requirements.txt not found in $SCRIPT_DIR"
-    echo "Please make sure you're running this script from the HinglishCaps folder."
+    echo "Python 3.12 was not found."
+    echo "Install it with one of these options:"
+    echo "- brew install python@3.12"
+    echo "- https://www.python.org/downloads/macos/"
     exit 1
 fi
 
-echo ""
-echo "════════════════════════════════════════════════════════════════════════════════"
-echo "🎉 INSTALLATION COMPLETE!"
-echo "════════════════════════════════════════════════════════════════════════════════"
-echo ""
-echo "HinglishCaps is now ready to use!"
-echo ""
-echo "The web interface will open in your browser automatically."
-echo "You can also run it manually anytime by:"
-echo "1. Opening Terminal"
-echo "2. Navigating to this folder: cd \"$SCRIPT_DIR\""
-echo "3. Running: source venv/bin/activate && python app.py"
-echo ""
-echo "For batch processing (multiple videos), use:"
-echo "source venv/bin/activate && python batch.py your-video.mp4"
-echo ""
-echo "════════════════════════════════════════════════════════════════════════════════"
+echo "Using $($PYTHON_BIN --version 2>&1)"
 
-# Launch the application
-echo "🚀 Launching HinglishCaps..."
-echo "Opening browser at http://localhost:7860"
-echo "Press Ctrl+C in Terminal to stop the application"
+echo "Checking FFmpeg..."
+if ! command -v ffmpeg >/dev/null 2>&1; then
+    if ! command -v brew >/dev/null 2>&1; then
+        echo "FFmpeg is required, and Homebrew was not found."
+        echo "Install Homebrew first: https://brew.sh"
+        exit 1
+    fi
+    echo "Installing FFmpeg with Homebrew..."
+    brew install ffmpeg
+fi
+
+echo "Creating virtual environment..."
+rm -rf venv
+"$PYTHON_BIN" -m venv venv
+source venv/bin/activate
+
+echo "Installing dependencies..."
+python -m pip install --upgrade pip
+pip install -r requirements_full.txt
+
+echo ""
+echo "Installation complete."
+echo "Opening HinglishCaps at http://127.0.0.1:7860"
+echo "Press Ctrl+C in this terminal to stop the app."
 echo ""
 
-# Wait a moment for user to read
-sleep 2
-
-# Run the application
-python app.py
+python app_full.py

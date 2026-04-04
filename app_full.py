@@ -13,21 +13,6 @@ import sys
 import zipfile
 import tempfile
 
-# Monkey patch for HfFolder issue in Gradio 4.44.1
-try:
-    from huggingface_hub import HfFolder
-except ImportError:
-    # Mock HfFolder if it doesn't exist
-    class HfFolder:
-        @staticmethod
-        def save_token(token):
-            pass
-        @staticmethod
-        def get_token():
-            return None
-    import huggingface_hub
-    huggingface_hub.HfFolder = HfFolder
-
 print("=" * 60)
 print("HinglishCaps - Full Web Application")
 print("=" * 60)
@@ -740,7 +725,7 @@ if __name__ == "__main__":
     
     app = build_ui()
     launch_kwargs = {
-        "server_name": "0.0.0.0",
+        "server_name": "127.0.0.1",
         "share": False,
         "debug": False,
         "server_port": int(port),

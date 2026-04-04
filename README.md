@@ -4,7 +4,7 @@ HinglishCaps is a local-first captioning tool for Hindi, English, and Hinglish v
 
 It generates subtitle files you can import into editors like CapCut, DaVinci Resolve, Premiere Pro, and Final Cut Pro.
 
-The app is designed to run on your own machine because the transcription model is heavy and works best with local CPU/RAM access.
+This project is designed to run on your own machine. The transcription model is large, so local use is the most reliable path.
 
 ## What it does
 
@@ -16,7 +16,17 @@ The app is designed to run on your own machine because the transcription model i
 
 Powered by [Oriserve/Whisper-Hindi2Hinglish-Apex](https://huggingface.co/Oriserve/Whisper-Hindi2Hinglish-Apex), a Whisper checkpoint fine-tuned for Hinglish and Indian speech patterns.
 
-## Recommended way to use it
+## Important: use Python 3.12
+
+For the current dependency stack, the recommended version is **Python 3.12**.
+
+Please avoid:
+- Python 3.13
+- Python 3.14
+
+Those newer versions can fail during dependency installation or app startup.
+
+## Easiest way to use HinglishCaps
 
 Run the local web app:
 
@@ -27,35 +37,36 @@ python app_full.py
 Then open:
 
 ```text
-http://localhost:7860
+http://127.0.0.1:7860
 ```
-
-This is the best experience for most users.
 
 ## System requirements
 
-- Python 3.9 or newer
+- Python 3.12
 - FFmpeg installed and available in `PATH`
 - 8 GB RAM minimum
 - Internet connection on first run to download the model
 
 ## macOS setup
 
-### 1. Install Python
+### 1. Install Python 3.12
 
-If you do not already have a recent Python:
+Option A: python.org
+- Download Python 3.12 from [python.org](https://www.python.org/downloads/macos/)
 
-- Download from [python.org](https://www.python.org/downloads/macos/)
+Option B: Homebrew
+
+```bash
+brew install python@3.12
+```
 
 Check it:
 
 ```bash
-python3 --version
+python3.12 --version
 ```
 
 ### 2. Install FFmpeg
-
-Using Homebrew:
 
 ```bash
 brew install ffmpeg
@@ -77,7 +88,7 @@ cd toolazytoaddcaptions
 ### 4. Create a virtual environment
 
 ```bash
-python3 -m venv venv
+python3.12 -m venv venv
 source venv/bin/activate
 ```
 
@@ -86,12 +97,14 @@ source venv/bin/activate
 For the web app:
 
 ```bash
+pip install --upgrade pip
 pip install -r requirements_full.txt
 ```
 
 For command-line only usage:
 
 ```bash
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
@@ -104,20 +117,20 @@ python app_full.py
 Open:
 
 ```text
-http://localhost:7860
+http://127.0.0.1:7860
 ```
 
 ## Windows setup
 
-### 1. Install Python
+### 1. Install Python 3.12
 
-- Download from [python.org](https://www.python.org/downloads/windows/)
-- During installation, make sure you check `Add Python to PATH`
+- Download **Python 3.12** from [python.org](https://www.python.org/downloads/windows/)
+- During installation, check `Add Python to PATH`
 
-Check it in Command Prompt or PowerShell:
+Check it:
 
 ```powershell
-python --version
+py -3.12 --version
 ```
 
 ### 2. Install FFmpeg
@@ -144,7 +157,7 @@ cd toolazytoaddcaptions
 ### 4. Create a virtual environment
 
 ```powershell
-python -m venv venv
+py -3.12 -m venv venv
 venv\Scripts\activate
 ```
 
@@ -153,12 +166,14 @@ venv\Scripts\activate
 For the web app:
 
 ```powershell
+python -m pip install --upgrade pip
 pip install -r requirements_full.txt
 ```
 
 For command-line only usage:
 
 ```powershell
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
@@ -171,17 +186,17 @@ python app_full.py
 Open:
 
 ```text
-http://localhost:7860
+http://127.0.0.1:7860
 ```
 
-## Easier installers
+## Installers
 
 This repo also includes:
 
-- macOS: [`install-mac.sh`](install-mac.sh)
-- Windows: [`install-windows.bat`](install-windows.bat)
+- `install-mac.sh`
+- `install-windows.bat`
 
-These are meant to help users set things up faster, but the manual instructions above are the most reliable reference.
+These are intended to guide users into the correct setup path, but the manual instructions above are the main reference.
 
 ## How to use the web app
 
@@ -242,6 +257,12 @@ After that, the model is cached and future runs are faster.
 
 ## Troubleshooting
 
+### `tokenizers` build error or strange install failures
+
+This usually means you are using the wrong Python version.
+
+Use **Python 3.12** and recreate the virtual environment.
+
 ### `ffmpeg not found`
 
 - Make sure FFmpeg is installed
@@ -250,8 +271,9 @@ After that, the model is cached and future runs are faster.
 
 ### `python not found`
 
-- Reinstall Python and ensure it is added to `PATH`
-- On macOS, try `python3` if `python` is not available
+- Reinstall Python 3.12 and ensure it is added to `PATH`
+- On macOS, use `python3.12`
+- On Windows, use `py -3.12`
 
 ### `ModuleNotFoundError`
 
@@ -281,4 +303,4 @@ This is expected because the model downloads and initializes the first time.
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See `LICENSE`.
