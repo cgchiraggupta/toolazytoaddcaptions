@@ -222,6 +222,7 @@ These are intended to guide users into the correct setup path, but the manual in
 - `srt`: Standard subtitle format, works in most editors
 - `pr-srt`: Premiere Pro-friendly SRT output
 - `pr-text`: Text export for Premiere workflows
+- `vtt`: WebVTT subtitles for web players and modern video tools
 
 ## Command-line usage
 
@@ -246,7 +247,7 @@ python simple_caps.py ./videos
 With custom options:
 
 ```bash
-python simple_caps.py video.mp4 --output ./captions --format pr-srt --word-level --words 2
+python simple_caps.py video.mp4 --output ./captions --format vtt --word-level --words 2 --offset 0.35
 ```
 
 ## First run note

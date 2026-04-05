@@ -9,9 +9,10 @@ Usage:
 
 Options:
   --output DIR      Output directory (default: ./captions)
-  --format FORMAT   Output format: srt, pr-srt, pr-text (default: srt)
+  --format FORMAT   Output format: srt, pr-srt, pr-text, vtt (default: srt)
   --word-level      Generate word-level timestamps
   --words N         Words per line for word-level (default: 2)
+  --offset SEC      Shift subtitle timings (+ delays, - starts earlier)
 """
 
 import os
@@ -34,12 +35,14 @@ def main():
                        help='Video files or folder path')
     parser.add_argument('--output', '-o', default='./captions',
                        help='Output directory (default: ./captions)')
-    parser.add_argument('--format', '-f', choices=['srt', 'pr-srt', 'pr-text'],
+    parser.add_argument('--format', '-f', choices=['srt', 'pr-srt', 'pr-text', 'vtt'],
                        default='srt', help='Output format (default: srt)')
     parser.add_argument('--word-level', '-w', action='store_true',
                        help='Generate word-level timestamps')
     parser.add_argument('--words', type=int, default=2,
                        help='Words per line for word-level (default: 2)')
+    parser.add_argument('--offset', type=float, default=0.0,
+                       help='Shift subtitle timings in seconds (+ delays, - starts earlier)')
     
     args = parser.parse_args()
     
@@ -93,6 +96,8 @@ def main():
     ]
     if args.word_level:
         cmd.extend(['--word-level', '--words-per-line', str(args.words)])
+    if abs(args.offset) >= 1e-9:
+        cmd.extend(['--offset-seconds', str(args.offset)])
     
     print(f"\n🚀 Running: {' '.join(cmd)}")
     print("\n⏳ This may take a while...")

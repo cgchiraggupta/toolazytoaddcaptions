@@ -391,14 +391,40 @@ def render_status(message, tone="ready", title=None):
     </div>
     """
 
+FORMAT_OPTIONS = [
+    ("Standard SRT (works everywhere)", "srt"),
+    ("Premiere Pro SRT", "pr-srt"),
+    ("Premiere Pro Text", "pr-text"),
+    ("WebVTT (.vtt)", "vtt"),
+]
 
-def generate_captions(video_path, word_level=False, words_per_line=2, output_format="srt"):
+
+def build_caption_content(segments, output_format, video_path):
+    """Build subtitle content for the selected export format."""
+    if output_format == "pr-text":
+        fps = batch.get_video_fps(video_path)
+        return batch.segments_to_pr_text(segments, fps=fps)
+    if output_format == "pr-srt":
+        return batch.segments_to_pr_srt(segments)
+    if output_format == "vtt":
+        return batch.segments_to_vtt(segments)
+    return batch.segments_to_srt(segments)
+
+
+def generate_captions(
+    video_path,
+    word_level=False,
+    words_per_line=2,
+    output_format="srt",
+    offset_seconds=0.0,
+):
     """Generate captions for a single video."""
     if not video_path:
         return None, render_status("Please upload a video first.", "warning", "Upload needed")
     
     try:
         video_path = resolve_path(video_path)
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
 
         # Extract audio
         with tempfile.TemporaryDirectory() as tmp:
@@ -412,17 +438,14 @@ def generate_captions(video_path, word_level=False, words_per_line=2, output_for
             
             if not segments:
                 return None, render_status("No speech detected in the video.", "warning", "No speech found")
-            
+
+            if abs(offset_seconds) >= 1e-9:
+                segments = batch.shift_segments(segments, float(offset_seconds))
+
             # Generate output
-            if output_format == "pr-text":
-                content = batch.segments_to_pr_text(segments, fps=25.0)
-                filename = "captions.txt"
-            elif output_format == "pr-srt":
-                content = batch.segments_to_pr_srt(segments)
-                filename = "captions.srt"
-            else:  # srt
-                content = batch.segments_to_srt(segments)
-                filename = "captions.srt"
+            content = build_caption_content(segments, output_format, video_path)
+            ext = batch.OUTPUT_FORMATS.get(output_format, batch.OUTPUT_FORMATS["srt"])["ext"]
+            filename = f"{video_name}_captions{ext}"
             
             # Save to temp file
             output_dir = reserve_output_dir()
@@ -435,7 +458,13 @@ def generate_captions(video_path, word_level=False, words_per_line=2, output_for
     except Exception as e:
         return None, render_status(str(e), "error")
 
-def generate_captions_batch(video_files, word_level=False, words_per_line=2, output_format="srt"):
+def generate_captions_batch(
+    video_files,
+    word_level=False,
+    words_per_line=2,
+    output_format="srt",
+    offset_seconds=0.0,
+):
     """Generate captions for multiple videos."""
     if not video_files:
         return None, render_status("Please upload video files first.", "warning", "Upload needed")
@@ -463,18 +492,15 @@ def generate_captions_batch(video_files, word_level=False, words_per_line=2, out
                     if not segments:
                         failed.append(f"{video_label}: No speech detected")
                         continue
-                    
+
+                    if abs(offset_seconds) >= 1e-9:
+                        segments = batch.shift_segments(segments, float(offset_seconds))
+
                     # Generate output
                     video_name = os.path.splitext(os.path.basename(video_path))[0]
-                    if output_format == "pr-text":
-                        content = batch.segments_to_pr_text(segments, fps=25.0)
-                        filename = f"{video_name}_captions.txt"
-                    elif output_format == "pr-srt":
-                        content = batch.segments_to_pr_srt(segments)
-                        filename = f"{video_name}_captions.srt"
-                    else:  # srt
-                        content = batch.segments_to_srt(segments)
-                        filename = f"{video_name}_captions.srt"
+                    content = build_caption_content(segments, output_format, video_path)
+                    ext = batch.OUTPUT_FORMATS.get(output_format, batch.OUTPUT_FORMATS["srt"])["ext"]
+                    filename = f"{video_name}_captions{ext}"
                     
                     # Save to temp directory
                     output_dir = reserve_output_dir()
@@ -534,10 +560,10 @@ def build_ui():
                   <div class="hc-chip">Premiere Pro friendly exports</div>
                 </div>
               </div>
-              <div class="hc-metrics">
+                <div class="hc-metrics">
                 <div class="hc-metric">
-                  <strong>3 formats</strong>
-                  <span>Standard SRT, Premiere SRT, and text exports for flexible edit workflows.</span>
+                  <strong>4 formats</strong>
+                  <span>Standard SRT, Premiere SRT, Premiere text, and WebVTT exports for flexible edit workflows.</span>
                 </div>
                 <div class="hc-metric">
                   <strong>Local-first</strong>
@@ -602,13 +628,16 @@ def build_ui():
                         )
 
                     output_format_dropdown = gr.Dropdown(
-                        choices=[
-                            ("Standard SRT (works everywhere)", "srt"),
-                            ("Premiere Pro SRT", "pr-srt"),
-                            ("Premiere Pro Text", "pr-text")
-                        ],
+                        choices=FORMAT_OPTIONS,
                         value="srt",
                         label="Output Format"
+                    )
+
+                    offset_seconds_input = gr.Number(
+                        value=0.0,
+                        precision=3,
+                        label="Subtitle Offset (seconds)",
+                        info="Positive delays captions, negative shows them earlier.",
                     )
 
                 run_btn = gr.Button("Generate Captions", variant="primary", size="lg")
@@ -627,7 +656,13 @@ def build_ui():
                 # Connect button to processing function
                 run_btn.click(
                     generate_captions,
-                    inputs=[video_input, word_level_check, words_per_line_slider, output_format_dropdown],
+                    inputs=[
+                        video_input,
+                        word_level_check,
+                        words_per_line_slider,
+                        output_format_dropdown,
+                        offset_seconds_input,
+                    ],
                     outputs=[output, status_box]
                 )
 
@@ -660,13 +695,16 @@ def build_ui():
                         )
 
                     batch_output_format_dropdown = gr.Dropdown(
-                        choices=[
-                            ("Standard SRT (works everywhere)", "srt"),
-                            ("Premiere Pro SRT", "pr-srt"),
-                            ("Premiere Pro Text", "pr-text")
-                        ],
+                        choices=FORMAT_OPTIONS,
                         value="srt",
                         label="Output Format"
+                    )
+
+                    batch_offset_seconds_input = gr.Number(
+                        value=0.0,
+                        precision=3,
+                        label="Subtitle Offset (seconds)",
+                        info="Positive delays captions, negative shows them earlier.",
                     )
 
                 batch_run_btn = gr.Button("Process All Videos", variant="primary", size="lg")
@@ -685,7 +723,13 @@ def build_ui():
                 # Connect button to processing function
                 batch_run_btn.click(
                     generate_captions_batch,
-                    inputs=[batch_video_input, batch_word_level_check, batch_words_per_line_slider, batch_output_format_dropdown],
+                    inputs=[
+                        batch_video_input,
+                        batch_word_level_check,
+                        batch_words_per_line_slider,
+                        batch_output_format_dropdown,
+                        batch_offset_seconds_input,
+                    ],
                     outputs=[batch_output, batch_status_box]
                 )
 
@@ -707,7 +751,7 @@ def build_ui():
               <ul>
                 <li>Best with clear dialogue and low background noise.</li>
                 <li>Supports MP4, MOV, AVI, MKV, WEBM, FLV, M4V, and WMV.</li>
-                <li>Exports standard SRT plus Premiere-friendly formats.</li>
+                <li>Exports standard SRT, WebVTT, and Premiere-friendly formats.</li>
               </ul>
             </div>
           </div>

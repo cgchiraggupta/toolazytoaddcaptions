@@ -19,6 +19,13 @@ from transformers import pipeline as hf_pipeline
 
 _model_cache = {}
 
+OUTPUT_FORMATS = {
+    "srt": {"label": "Standard SRT", "ext": ".srt"},
+    "pr-srt": {"label": "Premiere Pro SRT", "ext": ".srt"},
+    "pr-text": {"label": "Premiere Pro Text", "ext": ".txt"},
+    "vtt": {"label": "WebVTT", "ext": ".vtt"},
+}
+
 
 def load_model():
     """Load and cache the Apex model. Downloads automatically on first run (~1.5 GB)."""
@@ -217,6 +224,20 @@ def transcribe_word_level(
     return segments
 
 
+def shift_segments(segments: list[dict], offset_seconds: float) -> list[dict]:
+    """Shift segment timestamps by offset_seconds, clamping starts to >= 0."""
+    if abs(offset_seconds) < 1e-9:
+        return segments
+
+    shifted = []
+    min_duration = 0.05
+    for seg in segments:
+        start = max(0.0, seg["start"] + offset_seconds)
+        end = max(start + min_duration, seg["end"] + offset_seconds)
+        shifted.append({**seg, "start": start, "end": end})
+    return shifted
+
+
 # ─────────────────────────────────────────────
 # SRT GENERATION
 # ─────────────────────────────────────────────
@@ -241,6 +262,31 @@ def segments_to_srt(segments: list[dict]) -> str:
         end = seconds_to_srt_time(seg["end"])
         text = seg["text"].strip()
         lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+    return "\n".join(lines)
+
+
+def seconds_to_vtt_time(seconds: float) -> str:
+    """Convert float seconds -> HH:MM:SS.mmm (WebVTT format)."""
+    td = datetime.timedelta(seconds=seconds)
+    total_seconds = int(td.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    secs = total_seconds % 60
+    millis = int((seconds - int(seconds)) * 1000)
+    return f"{hours:02}:{minutes:02}:{secs:02}.{millis:03}"
+
+
+def segments_to_vtt(segments: list[dict]) -> str:
+    """Convert segments list to WebVTT string."""
+    lines = ["WEBVTT", ""]
+    for i, seg in enumerate(segments, start=1):
+        start = seconds_to_vtt_time(seg["start"])
+        end = seconds_to_vtt_time(seg["end"])
+        text = seg["text"].strip()
+        lines.append(str(i))
+        lines.append(f"{start} --> {end}")
+        lines.append(text)
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -347,6 +393,7 @@ def process_video(
     word_level: bool = False,
     words_per_line: int = 2,
     output_format: str = "srt",
+    offset_seconds: float = 0.0,
 ) -> str | None:
     """
     Full pipeline for a single video:
@@ -357,10 +404,8 @@ def process_video(
     video_name = os.path.splitext(os.path.basename(video_path))[0]
 
     # Determine output filename based on format
-    if output_format == "pr-text":
-        output_filename = f"{video_name}.txt"
-    else:
-        output_filename = f"{video_name}.srt"
+    ext = OUTPUT_FORMATS.get(output_format, OUTPUT_FORMATS["srt"])["ext"]
+    output_filename = f"{video_name}{ext}"
 
     output_path = os.path.join(output_dir, output_filename)
 
@@ -396,8 +441,12 @@ def process_video(
             return None
 
         # Step 3 — detect FPS for Premiere Pro formats
+        if abs(offset_seconds) >= 1e-9:
+            print(f"  Applying subtitle offset: {offset_seconds:+.3f}s")
+            segments = shift_segments(segments, offset_seconds)
+
         fps = 25.0
-        if output_format in ["pr-text", "pr-srt"]:
+        if output_format == "pr-text":
             print("  Detecting video FPS...")
             fps = get_video_fps(video_path)
             print(f"     FPS: {fps}")
@@ -411,6 +460,9 @@ def process_video(
         elif output_format == "pr-srt":
             # Premiere Pro optimized SRT (frame-accurate)
             content = segments_to_pr_srt(segments)
+        elif output_format == "vtt":
+            # WebVTT
+            content = segments_to_vtt(segments)
         else:
             # Standard SRT
             content = segments_to_srt(segments)
@@ -466,6 +518,7 @@ def run_batch(
     word_level: bool = False,
     words_per_line: int = 2,
     output_format: str = "srt",
+    offset_seconds: float = 0.0,
 ):
     """Process a list of video files and write caption files to output_dir."""
 
@@ -478,13 +531,8 @@ def run_batch(
     load_model()
     print("─" * 60)
 
-    format_name = {
-        "srt": "Standard SRT",
-        "pr-srt": "Premiere Pro SRT",
-        "pr-text": "Premiere Pro Text",
-    }.get(output_format, "SRT")
-
-    ext = ".txt" if output_format == "pr-text" else ".srt"
+    format_name = OUTPUT_FORMATS.get(output_format, OUTPUT_FORMATS["srt"])["label"]
+    ext = OUTPUT_FORMATS.get(output_format, OUTPUT_FORMATS["srt"])["ext"]
     print(f"Starting batch: {total} video(s) → {format_name} ({ext})")
     print(f"Output directory: {output_dir}\n")
 
@@ -495,7 +543,7 @@ def run_batch(
         video_start = time.time()
 
         result = process_video(
-            video_path, output_dir, word_level, words_per_line, output_format
+            video_path, output_dir, word_level, words_per_line, output_format, offset_seconds
         )
 
         elapsed = time.time() - video_start
@@ -590,11 +638,23 @@ def main():
     parser.add_argument(
         "--format",
         "-f",
-        choices=["srt", "pr-srt", "pr-text"],
+        choices=["srt", "pr-srt", "pr-text", "vtt"],
         default="srt",
         help=(
             "Output format: srt (standard), pr-srt (Premiere Pro SRT), "
-            "pr-text (Premiere Pro Text). Default: srt"
+            "pr-text (Premiere Pro Text), vtt (WebVTT). Default: srt"
+        ),
+    )
+
+    parser.add_argument(
+        "--offset-seconds",
+        "-os",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help=(
+            "Shift all subtitle timings by this amount. "
+            "Use positive to delay captions, negative to start earlier."
         ),
     )
 
@@ -630,14 +690,20 @@ def main():
     if args.word_level:
         print(f"Word-level mode: {args.words_per_line} words per line")
 
-    format_name = {
-        "srt": "Standard SRT",
-        "pr-srt": "Premiere Pro SRT",
-        "pr-text": "Premiere Pro Text",
-    }.get(args.format, "SRT")
+    format_name = OUTPUT_FORMATS.get(args.format, OUTPUT_FORMATS["srt"])["label"]
     print(f"Output format: {format_name}\n")
 
-    run_batch(videos, output_dir, args.word_level, args.words_per_line, args.format)
+    if abs(args.offset_seconds) >= 1e-9:
+        print(f"Subtitle offset: {args.offset_seconds:+.3f}s\n")
+
+    run_batch(
+        videos,
+        output_dir,
+        args.word_level,
+        args.words_per_line,
+        args.format,
+        args.offset_seconds,
+    )
 
 
 if __name__ == "__main__":
