@@ -11,7 +11,6 @@ This project is designed to run on your own machine. The transcription model is 
 - Generate captions for a single video
 - Process multiple videos in one batch
 - Export standard `.srt` files
-- Export Premiere Pro-friendly subtitle formats
 - Optionally generate shorter word-level subtitle chunks
 
 Powered by [Oriserve/Whisper-Hindi2Hinglish-Apex](https://huggingface.co/Oriserve/Whisper-Hindi2Hinglish-Apex), a Whisper checkpoint fine-tuned for Hinglish and Indian speech patterns.
@@ -204,10 +203,9 @@ These are intended to guide users into the correct setup path, but the manual in
 
 1. Open the `Single Video` tab
 2. Upload one video
-3. Choose whether you want word-level timestamps
-4. Pick the output format
-5. Click `Generate Captions`
-6. Download the generated subtitle file
+3. Choose whether you want shorter word-level caption chunks
+4. Click `Generate Captions`
+5. Download the generated `.srt` subtitle file
 
 ### Batch processing
 
@@ -215,14 +213,7 @@ These are intended to guide users into the correct setup path, but the manual in
 2. Upload multiple videos
 3. Choose your caption settings
 4. Click `Process All Videos`
-5. Download the ZIP file with all caption outputs
-
-## Output formats
-
-- `srt`: Standard subtitle format, works in most editors
-- `pr-srt`: Premiere Pro-friendly SRT output
-- `pr-text`: Text export for Premiere workflows
-- `vtt`: WebVTT subtitles for web players and modern video tools
+5. Download the ZIP file with all generated `.srt` files
 
 ## Command-line usage
 
@@ -247,7 +238,7 @@ python simple_caps.py ./videos
 With custom options:
 
 ```bash
-python simple_caps.py video.mp4 --output ./captions --format vtt --word-level --words 2 --offset 0.35
+python simple_caps.py video.mp4 --output ./captions --word-level --words 2 --offset 0.35
 ```
 
 ## First run note
