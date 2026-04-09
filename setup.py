@@ -113,7 +113,14 @@ def check_dependencies():
     """Check Python dependencies."""
     print_header("Checking Python Dependencies")
     
-    required = ['torch', 'transformers', 'whisper', 'whisper_timestamped', 'ffmpeg']
+    required = [
+        'torch',
+        'transformers',
+        'whisper',
+        'faster_whisper',
+        'whisper_timestamped',
+        'ffmpeg',
+    ]
     missing = []
     
     for dep in required:
@@ -152,6 +159,7 @@ def install_dependencies(missing):
         'torch': 'torch',
         'transformers': 'transformers',
         'whisper': 'openai-whisper',
+        'faster_whisper': 'faster-whisper',
         'whisper_timestamped': 'whisper-timestamped',
         'ffmpeg': 'ffmpeg-python'
     }
@@ -180,8 +188,7 @@ import subprocess
 subprocess.run([
     {PYTHON_CMD!r}, 'simple_caps.py',
     'your_video.mp4',
-    '--output', './captions',
-    '--format', 'srt'
+    '--output', './captions'
 ])
 ''',
         
@@ -194,7 +201,6 @@ subprocess.run([
     {PYTHON_CMD!r}, 'simple_caps.py',
     'folder_with_videos/',
     '--output', './batch_captions',
-    '--format', 'pr-srt',  # Premiere Pro format
     '--word-level'  # Word-level timestamps
 ])
 ''',
@@ -208,7 +214,6 @@ subprocess.run([
     {PYTHON_CMD!r}, 'simple_caps.py',
     'video1.mp4', 'video2.mov', 'video3.avi',
     '--output', './custom_output',
-    '--format', 'pr-text',  # Premiere Pro text format
     '--word-level',
     '--words', '3'  # 3 words per line
 ])
@@ -244,7 +249,10 @@ def main():
         if not install_dependencies(missing):
             print("\n❌ Failed to install some dependencies.")
             print("You can try installing them manually:")
-            print("  pip install torch transformers openai-whisper whisper-timestamped ffmpeg-python")
+            print(
+                "  pip install torch transformers openai-whisper faster-whisper "
+                "whisper-timestamped ffmpeg-python"
+            )
             return
     
     # Create example scripts
@@ -262,7 +270,7 @@ def main():
     print("\n4. With word-level timestamps:")
     print("   python simple_caps.py video.mp4 --word-level --words 3")
     print("\n5. For Premiere Pro compatibility:")
-    print("   python simple_caps.py video.mp4 --format pr-srt")
+    print("   python simple_caps.py video.mp4")
     print("\n📚 More examples in example_*.py files")
     print("\n💡 First run will download the AI model (~1.5 GB)")
     print("   Subsequent runs will be faster!")

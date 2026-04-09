@@ -1,0 +1,16 @@
+{
+  "replacements": [
+    { "pattern": "\\bvan naij\\b", "replacement": "wow, nice", "flags": "i" },
+    { "pattern": "\\bpagale gai ye\\?", "replacement": "pagal hai kya ye?", "flags": "i" },
+    { "pattern": "\\besa\\b", "replacement": "aise", "flags": "i" },
+    { "pattern": "\\bkarie\\b", "replacement": "kari hai", "flags": "i" },
+    { "pattern": "\\blak(?=\\s+rupe\\b)", "replacement": "lakh", "flags": "i" },
+    { "pattern": "\\bkud kud ke\\b", "replacement": "kuch chhod ke", "flags": "i" },
+    { "pattern": "\\bteni\\b", "replacement": "teri", "flags": "i" },
+    { "pattern": "\\bhoga de\\b", "replacement": "aukaat hai", "flags": "i" },
+    { "pattern": "\\busake\\b", "replacement": "uske", "flags": "i" },
+    { "pattern": "\\bsabane\\b", "replacement": "saamne", "flags": "i" },
+    { "pattern": "\\bIIT bas\\b", "replacement": "IIT pass", "flags": "i" },
+    { "pattern": "\\blikin\\b", "replacement": "lekin", "flags": "i" }
+  ]
+}

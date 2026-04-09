@@ -8,6 +8,7 @@ Run this on your local machine with sufficient RAM (8+ GB recommended).
 
 import datetime
 import html
+import json
 import os
 import sys
 import zipfile
@@ -16,16 +17,16 @@ import tempfile
 print("=" * 60)
 print("HinglishCaps - Full Web Application")
 print("=" * 60)
-print("\n⚠️  Warning: This app requires significant memory (8+ GB RAM)")
-print("   First run will download the 1.5 GB AI model")
+print("\nWarning: This app requires significant memory (8+ GB RAM)")
+print("   First run will download model files (size depends on transcription engine)")
 print("   Please be patient...\n")
 
 # Import the batch processor for transcription functions
 try:
     import batch
-    print("✅ Batch processor imported")
+    print("Batch processor imported")
 except ImportError as e:
-    print(f"❌ Error importing batch processor: {e}")
+    print(f"Error importing batch processor: {e}")
     print("Make sure all dependencies are installed:")
     print("  pip install -r requirements_full.txt")
     sys.exit(1)
@@ -355,6 +356,289 @@ button.primary:hover {
 """
 
 
+PRESET_STORAGE_PATH = os.path.join(
+    os.path.dirname(__file__), "caption_presets.json"
+)
+
+CAPTION_FORMAT_OPTIONS = ["Subtitle"]
+CAPTION_STREAM_OPTIONS = ["None"]
+CAPTION_STYLE_OPTIONS = ["None"]
+CAPTION_LINE_OPTIONS = ["Single", "Double"]
+TRANSCRIPTION_ENGINE_LABEL_TO_ID = {
+    "Whisper Large v3 (Recommended Quality)": "whisper-large-v3",
+    "Whisper Large v3 Turbo (Fastest)": "whisper-large-v3-turbo",
+    "Whisper Medium (Lighter)": "whisper-medium",
+    "Whisper Small (Lightest)": "whisper-small",
+    "Whisper Base (Smallest)": "whisper-base",
+    "Apex Hinglish (Legacy)": "apex",
+}
+DEFAULT_TRANSCRIPTION_ENGINE_LABEL = "Whisper Large v3 (Recommended Quality)"
+
+BUILTIN_CAPTION_PRESETS = {
+    "Subtitle default": {
+        "format_name": "Subtitle",
+        "stream": "None",
+        "style": "None",
+        "max_chars": 42,
+        "min_duration": 3.0,
+        "gap_frames": 0,
+        "lines": "Double",
+    },
+    "YouTube standard": {
+        "format_name": "Subtitle",
+        "stream": "None",
+        "style": "None",
+        "max_chars": 42,
+        "min_duration": 2.0,
+        "gap_frames": 0,
+        "lines": "Double",
+    },
+    "Shorts single line": {
+        "format_name": "Subtitle",
+        "stream": "None",
+        "style": "None",
+        "max_chars": 18,
+        "min_duration": 0.8,
+        "gap_frames": 1,
+        "lines": "Single",
+    },
+    "Reels punchy": {
+        "format_name": "Subtitle",
+        "stream": "None",
+        "style": "None",
+        "max_chars": 14,
+        "min_duration": 0.6,
+        "gap_frames": 2,
+        "lines": "Single",
+    },
+}
+
+
+def caption_settings_to_dict(settings):
+    """Normalize raw preset values into the backend caption settings shape."""
+    normalized = batch.normalize_caption_settings(settings)
+    return {
+        "format_name": normalized.format_name,
+        "stream": normalized.stream,
+        "style": normalized.style,
+        "max_chars": normalized.max_chars,
+        "min_duration": normalized.min_duration,
+        "gap_frames": normalized.gap_frames,
+        "lines": normalized.lines,
+    }
+
+
+def load_custom_presets():
+    """Read user-saved caption presets from disk."""
+    if not os.path.exists(PRESET_STORAGE_PATH):
+        return {}
+
+    try:
+        with open(PRESET_STORAGE_PATH, "r", encoding="utf-8") as handle:
+            raw_data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    presets = {}
+    for name, settings in raw_data.items():
+        presets[str(name)] = caption_settings_to_dict(settings)
+    return presets
+
+
+def save_custom_presets(presets):
+    """Persist user-saved presets to disk."""
+    with open(PRESET_STORAGE_PATH, "w", encoding="utf-8") as handle:
+        json.dump(presets, handle, indent=2, ensure_ascii=True)
+
+
+def get_caption_presets():
+    """Return built-in presets plus any user-saved presets."""
+    presets = {
+        name: caption_settings_to_dict(settings)
+        for name, settings in BUILTIN_CAPTION_PRESETS.items()
+    }
+    presets.update(load_custom_presets())
+    return presets
+
+
+def get_preset_choices():
+    """Return preset dropdown choices in stable order."""
+    return list(get_caption_presets().keys())
+
+
+def get_preset_settings(preset_name):
+    """Return settings for a preset name, falling back to the default preset."""
+    presets = get_caption_presets()
+    if preset_name in presets:
+        return presets[preset_name]
+    return presets["Subtitle default"]
+
+
+def build_caption_settings(
+    format_name,
+    stream,
+    style,
+    max_chars,
+    min_duration,
+    gap_frames,
+    lines,
+):
+    """Build the caption settings payload passed to the backend."""
+    return caption_settings_to_dict(
+        {
+            "format_name": format_name,
+            "stream": stream,
+            "style": style,
+            "max_chars": max_chars,
+            "min_duration": min_duration,
+            "gap_frames": gap_frames,
+            "lines": lines,
+        }
+    )
+
+
+def resolve_transcription_backend(engine_label):
+    """Map UI engine label to backend id understood by batch.py."""
+    return TRANSCRIPTION_ENGINE_LABEL_TO_ID.get(
+        str(engine_label or "").strip(),
+        TRANSCRIPTION_ENGINE_LABEL_TO_ID[DEFAULT_TRANSCRIPTION_ENGINE_LABEL],
+    )
+
+
+def load_preset_controls(preset_name):
+    """Return UI values for a selected preset."""
+    settings = get_preset_settings(preset_name)
+    return (
+        settings["format_name"],
+        settings["stream"],
+        settings["style"],
+        settings["max_chars"],
+        settings["min_duration"],
+        settings["gap_frames"],
+        settings["lines"],
+        preset_name,
+    )
+
+
+def save_preset_values(
+    preset_name,
+    format_name,
+    stream,
+    style,
+    max_chars,
+    min_duration,
+    gap_frames,
+    lines,
+):
+    """Save a custom preset and return updated dropdown metadata."""
+    name = (preset_name or "").strip()
+    if not name:
+        return None, render_status(
+            "Enter a preset name before saving.",
+            "warning",
+            "Preset name needed",
+        )
+
+    if name in BUILTIN_CAPTION_PRESETS:
+        return None, render_status(
+            "Built-in presets are read-only. Save under a new name instead.",
+            "warning",
+            "Choose a new preset name",
+        )
+
+    presets = load_custom_presets()
+    presets[name] = build_caption_settings(
+        format_name,
+        stream,
+        style,
+        max_chars,
+        min_duration,
+        gap_frames,
+        lines,
+    )
+    save_custom_presets(presets)
+    return name, render_status(
+        f"Saved preset '{name}'.",
+        "success",
+        "Preset saved",
+    )
+
+
+def delete_preset_value(preset_name):
+    """Delete a custom preset and return the next selected preset name."""
+    name = (preset_name or "").strip()
+    if not name:
+        return None, render_status(
+            "Select a preset to delete.",
+            "warning",
+            "Nothing selected",
+        )
+
+    if name in BUILTIN_CAPTION_PRESETS:
+        return None, render_status(
+            "Built-in presets cannot be deleted.",
+            "warning",
+            "Preset locked",
+        )
+
+    presets = load_custom_presets()
+    if name not in presets:
+        return None, render_status(
+            f"Preset '{name}' was not found.",
+            "warning",
+            "Preset missing",
+        )
+
+    presets.pop(name, None)
+    save_custom_presets(presets)
+    next_name = "Subtitle default"
+    return next_name, render_status(
+        f"Deleted preset '{name}'.",
+        "success",
+        "Preset deleted",
+    )
+
+
+def refresh_preset_dropdowns(selected_name, status_html):
+    """Return synchronized dropdown updates for both tabs."""
+    choices = get_preset_choices()
+    fallback = selected_name if selected_name in choices else "Subtitle default"
+    update = gr.update(choices=choices, value=fallback)
+    return update, update, fallback, fallback, status_html
+
+
+def save_preset_and_refresh(
+    preset_name,
+    format_name,
+    stream,
+    style,
+    max_chars,
+    min_duration,
+    gap_frames,
+    lines,
+):
+    """Save a preset, then refresh both preset dropdowns."""
+    selected_name, status_html = save_preset_values(
+        preset_name,
+        format_name,
+        stream,
+        style,
+        max_chars,
+        min_duration,
+        gap_frames,
+        lines,
+    )
+    fallback = (preset_name or "").strip() or "Subtitle default"
+    return refresh_preset_dropdowns(selected_name or fallback, status_html)
+
+
+def delete_preset_and_refresh(preset_name):
+    """Delete a preset, then refresh both preset dropdowns."""
+    selected_name, status_html = delete_preset_value(preset_name)
+    fallback = (preset_name or "").strip() or "Subtitle default"
+    return refresh_preset_dropdowns(selected_name or fallback, status_html)
+
+
 def reserve_output_dir():
     """Create a temp directory that survives long enough for Gradio downloads."""
     return tempfile.mkdtemp(prefix="hinglishcaps_")
@@ -391,14 +675,36 @@ def render_status(message, tone="ready", title=None):
     </div>
     """
 
+def build_caption_content(segments):
+    """Build the final SRT subtitle content."""
+    return batch.segments_to_srt(segments)
 
-def generate_captions(video_path, word_level=False, words_per_line=2, output_format="srt"):
+
+def generate_captions(
+    video_path,
+    word_level=False,
+    transcription_engine=DEFAULT_TRANSCRIPTION_ENGINE_LABEL,
+    enable_custom_replacements=False,
+    custom_replacements_file="",
+    caption_preset="Subtitle default",
+    format_name="Subtitle",
+    stream="None",
+    style="None",
+    max_chars=42,
+    min_duration=3.0,
+    gap_frames=0,
+    lines="Double",
+    offset_seconds=0.0,
+):
     """Generate captions for a single video."""
     if not video_path:
         return None, render_status("Please upload a video first.", "warning", "Upload needed")
     
     try:
         video_path = resolve_path(video_path)
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
+        transcription_backend = resolve_transcription_backend(transcription_engine)
+        custom_replacements_path = (custom_replacements_file or "").strip() or None
 
         # Extract audio
         with tempfile.TemporaryDirectory() as tmp:
@@ -406,23 +712,50 @@ def generate_captions(video_path, word_level=False, words_per_line=2, output_for
             
             # Transcribe
             if word_level:
-                segments = batch.transcribe_word_level(audio_path, words_per_line=words_per_line)
+                caption_settings = build_caption_settings(
+                    format_name,
+                    stream,
+                    style,
+                    max_chars,
+                    min_duration,
+                    gap_frames,
+                    lines,
+                )
+                segments = batch.transcribe_word_level(
+                    audio_path,
+                    video_path=video_path,
+                    caption_settings=caption_settings,
+                    transcription_backend=transcription_backend,
+                    enable_custom_replacements=enable_custom_replacements,
+                    custom_replacements_file=custom_replacements_path,
+                )
             else:
-                segments = batch.transcribe(audio_path)
+                segments = batch.transcribe(
+                    audio_path,
+                    transcription_backend=transcription_backend,
+                    enable_custom_replacements=enable_custom_replacements,
+                    custom_replacements_file=custom_replacements_path,
+                )
             
             if not segments:
                 return None, render_status("No speech detected in the video.", "warning", "No speech found")
-            
+
+            if abs(offset_seconds) >= 1e-9:
+                segments = batch.shift_segments(segments, float(offset_seconds))
+
+            segments = batch.trim_segments_to_duration(
+                segments, batch.get_media_duration(video_path)
+            )
+            if not segments:
+                return None, render_status(
+                    "No captions remained after trimming to the video duration.",
+                    "warning",
+                    "Nothing to export",
+                )
+
             # Generate output
-            if output_format == "pr-text":
-                content = batch.segments_to_pr_text(segments, fps=25.0)
-                filename = "captions.txt"
-            elif output_format == "pr-srt":
-                content = batch.segments_to_pr_srt(segments)
-                filename = "captions.srt"
-            else:  # srt
-                content = batch.segments_to_srt(segments)
-                filename = "captions.srt"
+            content = build_caption_content(segments)
+            filename = f"{video_name}_captions{batch.OUTPUT_EXTENSION}"
             
             # Save to temp file
             output_dir = reserve_output_dir()
@@ -430,12 +763,35 @@ def generate_captions(video_path, word_level=False, words_per_line=2, output_for
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(content)
             
-            return output_path, render_status("Captions generated successfully and ready to download.", "success")
+            success_message = "Captions generated successfully and ready to download."
+            if word_level:
+                success_message = (
+                    f"Captions generated successfully with preset '{caption_preset}' "
+                    f"using {transcription_engine}."
+                )
+            if enable_custom_replacements:
+                success_message += " Custom replacement dictionary: enabled."
+            return output_path, render_status(success_message, "success")
     
     except Exception as e:
         return None, render_status(str(e), "error")
 
-def generate_captions_batch(video_files, word_level=False, words_per_line=2, output_format="srt"):
+def generate_captions_batch(
+    video_files,
+    word_level=False,
+    transcription_engine=DEFAULT_TRANSCRIPTION_ENGINE_LABEL,
+    enable_custom_replacements=False,
+    custom_replacements_file="",
+    caption_preset="Subtitle default",
+    format_name="Subtitle",
+    stream="None",
+    style="None",
+    max_chars=42,
+    min_duration=3.0,
+    gap_frames=0,
+    lines="Double",
+    offset_seconds=0.0,
+):
     """Generate captions for multiple videos."""
     if not video_files:
         return None, render_status("Please upload video files first.", "warning", "Upload needed")
@@ -443,6 +799,8 @@ def generate_captions_batch(video_files, word_level=False, words_per_line=2, out
     try:
         results = []
         failed = []
+        transcription_backend = resolve_transcription_backend(transcription_engine)
+        custom_replacements_path = (custom_replacements_file or "").strip() or None
         
         for video_file in video_files:
             video_label = getattr(video_file, "name", None) or str(video_file)
@@ -456,25 +814,51 @@ def generate_captions_batch(video_files, word_level=False, words_per_line=2, out
                     
                     # Transcribe
                     if word_level:
-                        segments = batch.transcribe_word_level(audio_path, words_per_line=words_per_line)
+                        caption_settings = build_caption_settings(
+                            format_name,
+                            stream,
+                            style,
+                            max_chars,
+                            min_duration,
+                            gap_frames,
+                            lines,
+                        )
+                        segments = batch.transcribe_word_level(
+                            audio_path,
+                            video_path=video_path,
+                            caption_settings=caption_settings,
+                            transcription_backend=transcription_backend,
+                            enable_custom_replacements=enable_custom_replacements,
+                            custom_replacements_file=custom_replacements_path,
+                        )
                     else:
-                        segments = batch.transcribe(audio_path)
+                        segments = batch.transcribe(
+                            audio_path,
+                            transcription_backend=transcription_backend,
+                            enable_custom_replacements=enable_custom_replacements,
+                            custom_replacements_file=custom_replacements_path,
+                        )
                     
                     if not segments:
                         failed.append(f"{video_label}: No speech detected")
                         continue
-                    
+
+                    if abs(offset_seconds) >= 1e-9:
+                        segments = batch.shift_segments(segments, float(offset_seconds))
+
+                    segments = batch.trim_segments_to_duration(
+                        segments, batch.get_media_duration(video_path)
+                    )
+                    if not segments:
+                        failed.append(
+                            f"{video_label}: No captions remained after trimming to the video duration"
+                        )
+                        continue
+
                     # Generate output
                     video_name = os.path.splitext(os.path.basename(video_path))[0]
-                    if output_format == "pr-text":
-                        content = batch.segments_to_pr_text(segments, fps=25.0)
-                        filename = f"{video_name}_captions.txt"
-                    elif output_format == "pr-srt":
-                        content = batch.segments_to_pr_srt(segments)
-                        filename = f"{video_name}_captions.srt"
-                    else:  # srt
-                        content = batch.segments_to_srt(segments)
-                        filename = f"{video_name}_captions.srt"
+                    content = build_caption_content(segments)
+                    filename = f"{video_name}_captions{batch.OUTPUT_EXTENSION}"
                     
                     # Save to temp directory
                     output_dir = reserve_output_dir()
@@ -498,7 +882,12 @@ def generate_captions_batch(video_files, word_level=False, words_per_line=2, out
             for file_path, filename in results:
                 zipf.write(file_path, filename)
         
-        status = f"✅ Processed {len(results)} video(s)"
+        status = f"Processed {len(results)} video(s)"
+        status += f" using {transcription_engine}"
+        if enable_custom_replacements:
+            status += " with custom replacements"
+        if word_level:
+            status += f" with preset '{caption_preset}'"
         if failed:
             status += f", failed {len(failed)}: {', '.join(failed[:3])}"
             if len(failed) > 3:
@@ -525,19 +914,19 @@ def build_ui():
                 <h1>Captions built for Hindi, English, and real Hinglish speech.</h1>
                 <p>
                   Turn raw video into clean subtitle files with a local workflow designed for Indian accents,
-                  code-switching, and quick editor handoff. Upload once, choose your format, and export with
+                  code-switching, and quick editor handoff. Upload once, generate captions, and export with
                   clarity instead of wrestling with generic caption tools.
                 </p>
                 <div class="hc-chip-row">
                   <div class="hc-chip">Single video or batch uploads</div>
                   <div class="hc-chip">Word-level timestamps</div>
-                  <div class="hc-chip">Premiere Pro friendly exports</div>
+                  <div class="hc-chip">Clean SRT exports</div>
                 </div>
               </div>
-              <div class="hc-metrics">
+                <div class="hc-metrics">
                 <div class="hc-metric">
-                  <strong>3 formats</strong>
-                  <span>Standard SRT, Premiere SRT, and text exports for flexible edit workflows.</span>
+                  <strong>1 format</strong>
+                  <span>Exports clean SRT subtitle files that drop directly into most editing workflows.</span>
                 </div>
                 <div class="hc-metric">
                   <strong>Local-first</strong>
@@ -561,11 +950,11 @@ def build_ui():
           </div>
           <div class="hc-info-card">
             <h3>Tune the timing</h3>
-            <p>Switch on word-level captions when you want shorter, punchier subtitle chunks for reels and social edits.</p>
+            <p>Switch on word-level captions when you want shorter, punchier subtitle chunks while keeping the Hinglish transcript style.</p>
           </div>
           <div class="hc-info-card">
             <h3>Export for editing</h3>
-            <p>Choose the caption format that matches your editor so you can move directly into styling and final polish.</p>
+            <p>Generate a clean SRT file you can import into your editor and style there.</p>
           </div>
         </div>
         """)
@@ -577,7 +966,9 @@ def build_ui():
         </div>
         """)
 
-        with gr.Tabs(elem_classes="tabs") as tabs:
+        preset_choices = get_preset_choices()
+
+        with gr.Tabs(elem_classes="tabs"):
             with gr.TabItem("Single Video", id="single"):
                 gr.HTML("""
                 <div class="hc-panel">
@@ -596,40 +987,114 @@ def build_ui():
                 with gr.Group(elem_classes="hc-panel"):
                     with gr.Row():
                         word_level_check = gr.Checkbox(label="Word-level timestamps", value=False)
-                        words_per_line_slider = gr.Slider(
-                            minimum=1, maximum=5, value=2, step=1,
-                            label="Words per line", visible=False
+                        transcription_engine_dropdown = gr.Dropdown(
+                            choices=list(TRANSCRIPTION_ENGINE_LABEL_TO_ID.keys()),
+                            value=DEFAULT_TRANSCRIPTION_ENGINE_LABEL,
+                            label="Transcription Engine",
+                            info="Whisper engines are auto-converted to Hinglish roman script.",
+                        )
+                        custom_replacements_check = gr.Checkbox(
+                            label="Enable Custom Phrase Dictionary",
+                            value=False,
+                            info="Optional and off by default.",
                         )
 
-                    output_format_dropdown = gr.Dropdown(
-                        choices=[
-                            ("Standard SRT (works everywhere)", "srt"),
-                            ("Premiere Pro SRT", "pr-srt"),
-                            ("Premiere Pro Text", "pr-text")
-                        ],
-                        value="srt",
-                        label="Output Format"
+                    with gr.Group(
+                        visible=False, elem_classes="hc-subpanel"
+                    ) as single_custom_replacements_panel:
+                        custom_replacements_file_input = gr.Textbox(
+                            value="",
+                            label="Custom Dictionary JSON Path",
+                            placeholder="C:\\path\\to\\replacements.json",
+                            info=(
+                                "Optional per-channel phrase fixes. "
+                                "Use only when you want custom rules."
+                            ),
+                        )
+
+                    offset_seconds_input = gr.Number(
+                        value=0.0,
+                        precision=3,
+                        label="Subtitle Offset (seconds)",
+                        info="Positive delays captions, negative shows them earlier.",
                     )
+
+                    with gr.Group(visible=False, elem_classes="hc-subpanel") as single_word_level_panel:
+                        single_preset_status = gr.HTML(
+                            render_status(
+                                "Load a preset or save your current settings for repeatable word-level captions.",
+                                "ready",
+                                "Caption presets",
+                            )
+                        )
+                        with gr.Row():
+                            caption_preset_dropdown = gr.Dropdown(
+                                choices=preset_choices,
+                                value="Subtitle default",
+                                label="Caption Preset",
+                            )
+                            preset_name_input = gr.Textbox(
+                                value="Subtitle default",
+                                label="Preset Name",
+                                placeholder="Save these settings as a custom preset",
+                            )
+                        with gr.Row():
+                            save_preset_btn = gr.Button("Save Preset")
+                            delete_preset_btn = gr.Button("Delete Preset")
+                        with gr.Accordion(
+                            "Captioning Preferences (format, max/min length, lines)",
+                            open=True,
+                        ):
+                            format_dropdown = gr.Dropdown(
+                                choices=CAPTION_FORMAT_OPTIONS,
+                                value="Subtitle",
+                                label="Format",
+                                interactive=False,
+                            )
+                            stream_dropdown = gr.Dropdown(
+                                choices=CAPTION_STREAM_OPTIONS,
+                                value="None",
+                                label="Stream",
+                                interactive=False,
+                            )
+                            style_dropdown = gr.Dropdown(
+                                choices=CAPTION_STYLE_OPTIONS,
+                                value="None",
+                                label="Style",
+                                interactive=False,
+                            )
+                            max_chars_slider = gr.Slider(
+                                minimum=10,
+                                maximum=70,
+                                value=42,
+                                step=1,
+                                label="Maximum length in characters",
+                            )
+                            min_duration_slider = gr.Slider(
+                                minimum=0.2,
+                                maximum=4.0,
+                                value=3.0,
+                                step=0.1,
+                                label="Minimum duration in seconds",
+                            )
+                            gap_frames_slider = gr.Slider(
+                                minimum=0,
+                                maximum=12,
+                                value=0,
+                                step=1,
+                                label="Gap between captions (frames)",
+                            )
+                            lines_radio = gr.Radio(
+                                choices=CAPTION_LINE_OPTIONS,
+                                value="Double",
+                                label="Lines",
+                            )
 
                 run_btn = gr.Button("Generate Captions", variant="primary", size="lg")
 
                 with gr.Row(elem_classes="result-row"):
                     output = gr.File(label="Download Captions")
                     status_box = gr.HTML(render_status("Upload a video and generate captions.", "ready"))
-
-                # Connect word-level checkbox to slider visibility
-                word_level_check.change(
-                    lambda x: gr.update(visible=x),
-                    inputs=[word_level_check],
-                    outputs=[words_per_line_slider]
-                )
-
-                # Connect button to processing function
-                run_btn.click(
-                    generate_captions,
-                    inputs=[video_input, word_level_check, words_per_line_slider, output_format_dropdown],
-                    outputs=[output, status_box]
-                )
 
             with gr.TabItem("Batch Processing", id="batch"):
                 gr.HTML("""
@@ -654,20 +1119,107 @@ def build_ui():
                 with gr.Group(elem_classes="hc-panel"):
                     with gr.Row():
                         batch_word_level_check = gr.Checkbox(label="Word-level timestamps", value=False)
-                        batch_words_per_line_slider = gr.Slider(
-                            minimum=1, maximum=5, value=2, step=1,
-                            label="Words per line", visible=False
+                        batch_transcription_engine_dropdown = gr.Dropdown(
+                            choices=list(TRANSCRIPTION_ENGINE_LABEL_TO_ID.keys()),
+                            value=DEFAULT_TRANSCRIPTION_ENGINE_LABEL,
+                            label="Transcription Engine",
+                            info="Whisper engines are auto-converted to Hinglish roman script.",
+                        )
+                        batch_custom_replacements_check = gr.Checkbox(
+                            label="Enable Custom Phrase Dictionary",
+                            value=False,
+                            info="Optional and off by default.",
                         )
 
-                    batch_output_format_dropdown = gr.Dropdown(
-                        choices=[
-                            ("Standard SRT (works everywhere)", "srt"),
-                            ("Premiere Pro SRT", "pr-srt"),
-                            ("Premiere Pro Text", "pr-text")
-                        ],
-                        value="srt",
-                        label="Output Format"
+                    with gr.Group(
+                        visible=False, elem_classes="hc-subpanel"
+                    ) as batch_custom_replacements_panel:
+                        batch_custom_replacements_file_input = gr.Textbox(
+                            value="",
+                            label="Custom Dictionary JSON Path",
+                            placeholder="C:\\path\\to\\replacements.json",
+                            info=(
+                                "Optional per-channel phrase fixes for batch mode."
+                            ),
+                        )
+
+                    batch_offset_seconds_input = gr.Number(
+                        value=0.0,
+                        precision=3,
+                        label="Subtitle Offset (seconds)",
+                        info="Positive delays captions, negative shows them earlier.",
                     )
+
+                    with gr.Group(visible=False, elem_classes="hc-subpanel") as batch_word_level_panel:
+                        batch_preset_status = gr.HTML(
+                            render_status(
+                                "Use the same caption rules across a whole batch with presets.",
+                                "ready",
+                                "Caption presets",
+                            )
+                        )
+                        with gr.Row():
+                            batch_caption_preset_dropdown = gr.Dropdown(
+                                choices=preset_choices,
+                                value="Subtitle default",
+                                label="Caption Preset",
+                            )
+                            batch_preset_name_input = gr.Textbox(
+                                value="Subtitle default",
+                                label="Preset Name",
+                                placeholder="Save these settings as a custom preset",
+                            )
+                        with gr.Row():
+                            batch_save_preset_btn = gr.Button("Save Preset")
+                            batch_delete_preset_btn = gr.Button("Delete Preset")
+                        with gr.Accordion(
+                            "Captioning Preferences (format, max/min length, lines)",
+                            open=True,
+                        ):
+                            batch_format_dropdown = gr.Dropdown(
+                                choices=CAPTION_FORMAT_OPTIONS,
+                                value="Subtitle",
+                                label="Format",
+                                interactive=False,
+                            )
+                            batch_stream_dropdown = gr.Dropdown(
+                                choices=CAPTION_STREAM_OPTIONS,
+                                value="None",
+                                label="Stream",
+                                interactive=False,
+                            )
+                            batch_style_dropdown = gr.Dropdown(
+                                choices=CAPTION_STYLE_OPTIONS,
+                                value="None",
+                                label="Style",
+                                interactive=False,
+                            )
+                            batch_max_chars_slider = gr.Slider(
+                                minimum=10,
+                                maximum=70,
+                                value=42,
+                                step=1,
+                                label="Maximum length in characters",
+                            )
+                            batch_min_duration_slider = gr.Slider(
+                                minimum=0.2,
+                                maximum=4.0,
+                                value=3.0,
+                                step=0.1,
+                                label="Minimum duration in seconds",
+                            )
+                            batch_gap_frames_slider = gr.Slider(
+                                minimum=0,
+                                maximum=12,
+                                value=0,
+                                step=1,
+                                label="Gap between captions (frames)",
+                            )
+                            batch_lines_radio = gr.Radio(
+                                choices=CAPTION_LINE_OPTIONS,
+                                value="Double",
+                                label="Lines",
+                            )
 
                 batch_run_btn = gr.Button("Process All Videos", variant="primary", size="lg")
 
@@ -675,19 +1227,159 @@ def build_ui():
                     batch_output = gr.File(label="Download ZIP File")
                     batch_status_box = gr.HTML(render_status("Upload one or more videos to start batch processing.", "ready"))
 
-                # Connect word-level checkbox to slider visibility
-                batch_word_level_check.change(
-                    lambda x: gr.update(visible=x),
-                    inputs=[batch_word_level_check],
-                    outputs=[batch_words_per_line_slider]
-                )
+        word_level_check.change(
+            lambda enabled: gr.update(visible=enabled),
+            inputs=[word_level_check],
+            outputs=[single_word_level_panel],
+        )
+        batch_word_level_check.change(
+            lambda enabled: gr.update(visible=enabled),
+            inputs=[batch_word_level_check],
+            outputs=[batch_word_level_panel],
+        )
+        custom_replacements_check.change(
+            lambda enabled: gr.update(visible=enabled),
+            inputs=[custom_replacements_check],
+            outputs=[single_custom_replacements_panel],
+        )
+        batch_custom_replacements_check.change(
+            lambda enabled: gr.update(visible=enabled),
+            inputs=[batch_custom_replacements_check],
+            outputs=[batch_custom_replacements_panel],
+        )
 
-                # Connect button to processing function
-                batch_run_btn.click(
-                    generate_captions_batch,
-                    inputs=[batch_video_input, batch_word_level_check, batch_words_per_line_slider, batch_output_format_dropdown],
-                    outputs=[batch_output, batch_status_box]
-                )
+        caption_preset_dropdown.change(
+            load_preset_controls,
+            inputs=[caption_preset_dropdown],
+            outputs=[
+                format_dropdown,
+                stream_dropdown,
+                style_dropdown,
+                max_chars_slider,
+                min_duration_slider,
+                gap_frames_slider,
+                lines_radio,
+                preset_name_input,
+            ],
+        )
+        batch_caption_preset_dropdown.change(
+            load_preset_controls,
+            inputs=[batch_caption_preset_dropdown],
+            outputs=[
+                batch_format_dropdown,
+                batch_stream_dropdown,
+                batch_style_dropdown,
+                batch_max_chars_slider,
+                batch_min_duration_slider,
+                batch_gap_frames_slider,
+                batch_lines_radio,
+                batch_preset_name_input,
+            ],
+        )
+
+        save_preset_btn.click(
+            save_preset_and_refresh,
+            inputs=[
+                preset_name_input,
+                format_dropdown,
+                stream_dropdown,
+                style_dropdown,
+                max_chars_slider,
+                min_duration_slider,
+                gap_frames_slider,
+                lines_radio,
+            ],
+            outputs=[
+                caption_preset_dropdown,
+                batch_caption_preset_dropdown,
+                preset_name_input,
+                batch_preset_name_input,
+                single_preset_status,
+            ],
+        )
+        batch_save_preset_btn.click(
+            save_preset_and_refresh,
+            inputs=[
+                batch_preset_name_input,
+                batch_format_dropdown,
+                batch_stream_dropdown,
+                batch_style_dropdown,
+                batch_max_chars_slider,
+                batch_min_duration_slider,
+                batch_gap_frames_slider,
+                batch_lines_radio,
+            ],
+            outputs=[
+                caption_preset_dropdown,
+                batch_caption_preset_dropdown,
+                preset_name_input,
+                batch_preset_name_input,
+                batch_preset_status,
+            ],
+        )
+        delete_preset_btn.click(
+            delete_preset_and_refresh,
+            inputs=[caption_preset_dropdown],
+            outputs=[
+                caption_preset_dropdown,
+                batch_caption_preset_dropdown,
+                preset_name_input,
+                batch_preset_name_input,
+                single_preset_status,
+            ],
+        )
+        batch_delete_preset_btn.click(
+            delete_preset_and_refresh,
+            inputs=[batch_caption_preset_dropdown],
+            outputs=[
+                caption_preset_dropdown,
+                batch_caption_preset_dropdown,
+                preset_name_input,
+                batch_preset_name_input,
+                batch_preset_status,
+            ],
+        )
+
+        run_btn.click(
+            generate_captions,
+            inputs=[
+                video_input,
+                word_level_check,
+                transcription_engine_dropdown,
+                custom_replacements_check,
+                custom_replacements_file_input,
+                caption_preset_dropdown,
+                format_dropdown,
+                stream_dropdown,
+                style_dropdown,
+                max_chars_slider,
+                min_duration_slider,
+                gap_frames_slider,
+                lines_radio,
+                offset_seconds_input,
+            ],
+            outputs=[output, status_box],
+        )
+        batch_run_btn.click(
+            generate_captions_batch,
+            inputs=[
+                batch_video_input,
+                batch_word_level_check,
+                batch_transcription_engine_dropdown,
+                batch_custom_replacements_check,
+                batch_custom_replacements_file_input,
+                batch_caption_preset_dropdown,
+                batch_format_dropdown,
+                batch_stream_dropdown,
+                batch_style_dropdown,
+                batch_max_chars_slider,
+                batch_min_duration_slider,
+                batch_gap_frames_slider,
+                batch_lines_radio,
+                batch_offset_seconds_input,
+            ],
+            outputs=[batch_output, batch_status_box],
+        )
 
         gr.HTML("""
         <section class="hc-footer">
@@ -696,9 +1388,10 @@ def build_ui():
               <h3>How to use it</h3>
               <ol>
                 <li>Upload one video or a batch of videos.</li>
-                <li>Enable word-level timing if you want shorter subtitle chunks.</li>
-                <li>Choose the export format that matches your editing workflow.</li>
-                <li>Generate captions and download the final file or ZIP.</li>
+                <li>Enable word-level timing if you want Premiere-style caption controls for shorter Hinglish subtitle chunks.</li>
+                <li>Pick a caption preset or tune max length, minimum duration, gaps, and line layout.</li>
+                <li>Use subtitle offset only if captions need to appear earlier or later.</li>
+                <li>Generate captions and download the final SRT file or ZIP.</li>
               </ol>
             </div>
             <div>
@@ -707,7 +1400,7 @@ def build_ui():
               <ul>
                 <li>Best with clear dialogue and low background noise.</li>
                 <li>Supports MP4, MOV, AVI, MKV, WEBM, FLV, M4V, and WMV.</li>
-                <li>Exports standard SRT plus Premiere-friendly formats.</li>
+                <li>Exports standard SRT subtitle files.</li>
               </ul>
             </div>
           </div>
@@ -719,9 +1412,9 @@ def build_ui():
 if __name__ == "__main__":
     port = os.environ.get("PORT") or os.environ.get("GRADIO_SERVER_PORT") or "7860"
 
-    print("\n🚀 Starting web server...")
-    print(f"📡 Open http://localhost:{port} in your browser")
-    print("⏳ Loading AI model (this may take a minute)...")
+    print("\nStarting web server...")
+    print(f"Open http://localhost:{port} in your browser")
+    print("Loading AI model (this may take a minute)...")
     
     app = build_ui()
     launch_kwargs = {

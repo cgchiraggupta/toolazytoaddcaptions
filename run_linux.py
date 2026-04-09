@@ -81,7 +81,10 @@ def install_python_deps():
     print("\nRun this command:")
     print("   pip install -r requirements.txt")
     print("\nOr install individually:")
-    print("   pip install torch transformers openai-whisper whisper-timestamped ffmpeg-python")
+    print(
+        "   pip install torch transformers openai-whisper faster-whisper "
+        "whisper-timestamped ffmpeg-python"
+    )
     
     # Check if pip is installed
     try:
@@ -129,15 +132,13 @@ def main():
     parser.add_argument('--video', help='Path to a single video file')
     parser.add_argument('--folder', help='Path to folder containing videos')
     parser.add_argument('--output', help='Output directory for caption files', default='./captions')
-    parser.add_argument('--format', choices=['srt', 'pr-srt', 'pr-text'], 
-                       default='srt', help='Output format (default: srt)')
     parser.add_argument('--word-level', action='store_true', 
                        help='Generate word-level timestamps')
     parser.add_argument('--words-per-line', type=int, default=2,
                        help='Words per line for word-level timestamps (default: 2)')
     
     args = parser.parse_args()
-    
+
     if not args.video and not args.folder:
         print("\n❌ Please specify either --video or --folder")
         parser.print_help()
@@ -158,7 +159,6 @@ def main():
             print(f"Processing single video: {args.video}")
             print("\n📝 For single video processing, use:")
             print(f'   python batch.py --video "{args.video}" --output "{args.output}"')
-            print(f"   --format {args.format}")
             if args.word_level:
                 print(f"   --word-level --words-per-line {args.words_per_line}")
         
@@ -167,7 +167,6 @@ def main():
             print(f"Processing folder: {args.folder}")
             print("\n📝 For batch processing, use:")
             print(f'   python batch.py --folder "{args.folder}" --output "{args.output}"')
-            print(f"   --format {args.format}")
             if args.word_level:
                 print(f"   --word-level --words-per-line {args.words_per_line}")
         
